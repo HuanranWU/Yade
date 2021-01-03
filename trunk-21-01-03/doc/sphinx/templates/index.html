@@ -1,0 +1,137 @@
+{% extends "layout.html" %}
+{% set title = 'Overview' %}
+{% block body %}
+  <h1>Welcome to Yade - Open Source Discrete Element Method</h1>
+  <p>
+	Yade is an extensible open-source framework for discrete numerical models, focused on Discrete Element Method. The computation parts are written in c++ using flexible object model, allowing independent implementation of new algorithms and interfaces. Python is used for rapid and concise scene construction, simulation control, postprocessing and debugging.
+  <p>
+  Yade is located at <a href="https://yade-dem.org">yade-dem.org</a>, which contains <a href="https://www.yade-dem.org/doc/">this documentation</a> and <a href="https://www.yade-dem.org/wiki/">wiki</a>. Development is kindly hosted on <a href="http://www.launchpad.net/yade">launchpad</a> and <a href="https://gitlab.com/yade-dev"> GitLab </a>; they are used for <a href="https://gitlab.com/yade-dev/trunk">source code</a>, <a href="https://gitlab.com/yade-dev/trunk/issues">bug tracking</a> and <a href="https://launchpad.net/yade/+download">source</a> downloads</a> and more. Building, regression tests and packages distribution are hosted on servers of the <a href="http://geomec.net/newsletter/">Grenoble Geomechanics group</a>  at <a href="https://www.3sr-grenoble.fr/spip.php?rubrique1">Laboratoire 3SR</a>, <a href="https://gricad.univ-grenoble-alpes.fr">UMS Gricad</a> and <a href="https://pg.edu.pl/">Gdańsk University of Technology</a>.
+  </p>
+  <p>
+  Since May 2019 Python 3 replaces Python 2 in Yade. Nostalgic users about Python 2 may refer to <a href="{{ pathto("installation") }}#python-2-backward-compatibility">Python 2 backward compatibility installation</a> advice.
+  </p>
+  <p>
+  Since March 2012 Yade is using GIT as VCS. The main branches are currently on  <a href="https://gitlab.com/yade-dev/trunk">GitLab</a> (migrated from GitHub in January 2019).
+  </p>
+  <p>
+   Please make sure you read the <a href="{{ pathto("citing") }}">"Acknowledging Yade"</a> section if you plan to cite Yade in publications.
+  </p>
+  <p>
+   This documentation describes Yade version {{ release }} / {{ version }}.
+  </p>
+  
+ <h2>Yade Community</h2>
+ 
+ <table class="contentstable" align="center" style="margin-left: 30px">
+    <tr>
+      <td width="50%">
+        <p class="biglink"><a class="biglink" href="https://launchpad.net/yade/+announcements">NEWS</a><br/>
+           <span class="linkdescr">latest news about Yade project</span></p>
+        <p class="biglink"><a class="biglink" href="https://yade-dem.org/wiki/Authors_and_contributors">Authors and contributors</a><br/>
+           <span class="linkdescr">information about the people working on Yade</span></p>
+        <p class="biglink"><a class="biglink" href="https://www.yade-dem.org/doc/publications.html">Publications</a><br/>
+           <span class="linkdescr">on Yade itself or done with Yade</span></p>
+        <p class="biglink"><a class="biglink" href="https://yade-dem.org/doc/user.html#getting-help">Public Mailing Lists</a><br/>
+           <span class="linkdescr">Getting help and discussions</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("citing") }}">Acknowledging Yade</a><br/>
+           <span class="linkdescr">How to cite Yade in publications</span></p>
+      </td>
+      <td width="50%">
+        <p class="biglink"><a class="biglink" href={{ pathto("consulting") }}>Paid support and Consulting</a><br/>
+           <span class="linkdescr">Need professional help?</span></p>
+        <p class="biglink"><a class="biglink" href="https://answers.launchpad.net/yade">Questions and answers</a><br/>
+           <span class="linkdescr">Users questions, hosted at launchpad</span></p>
+        <p class="biglink"><a class="biglink" href="https://yade-dem.org/wiki/">Wiki pages</a><br/>
+           <span class="linkdescr">A less formal place to report results and more, worth a look</span></p>
+        <p class="biglink"><a class="biglink" href="https://yade-dem.org/wiki/WhoIsDoingWhat">Who Is Doing What (Wiki)</a><br/>
+           <span class="linkdescr">you may introduce yourself here</span></p>
+        <p class="biglink"><a class="biglink" href="https://yade-dem.org/doc/tutorial-more-examples.html">Screenshots and videos</a><br/>
+           <span class="linkdescr">Simulation examples; feel free to add yours.</span></p>
+      </td>
+    </tr>
+ </table>
+ 
+ <h2>Documentation</h2>
+
+  <table class="contentstable" align="center" style="margin-left: 30px">
+    <tr>
+      <td width="50%">
+        <p class="biglink"><a class="biglink" href="{{ pathto("introduction") }}">Introduction</a><br/>
+           <span class="linkdescr">getting familiar with Yade</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("tutorial") }}">Tutorial</a><br/>
+           <span class="linkdescr">first steps with practical <a class="link" href="{{ pathto("tutorial-examples") }}">examples</a></span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("user") }}">User's Manual</a><br/>
+           <span class="linkdescr">functionality guide and description</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("prog") }}">Programmer's Manual</a><br/>
+           <span class="linkdescr">understanding and modifying the internals of Yade</span></p>
+      </td>
+      <td width="50%">
+        <p class="biglink"><a class="biglink" href="{{ pathto("formulation") }}">DEM Formulation</a><br/>
+           <span class="linkdescr">the Discrete Element Method (DEM)</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("yade.wrapper") }}">Class reference</a><br/>
+           <span class="linkdescr">simulation building blocks, c++ &amp; python</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("modules") }}">Yade modules</a><br/>
+           <span class="linkdescr">python modules extending Yade</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("FEMxDEM") }}">Multiscale FEMxDEM</a><br/>
+           <span class="linkdescr">Parallel coupling using Escript and Yade</span></p>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%">
+        <p class="biglink"><a class="biglink" href="{{ pathto("references") }}">References</a><br/>
+           <span class="linkdescr">articles cited in the documentation</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("installation") }}">Installation</a><br/>
+           <span class="linkdescr">from binaries and sources</span></p>
+       <p class="biglink"><a class="biglink" href="{{ pathto("index-toctree") }}">Full contents</a><br/>
+           <span class="linkdescr">with all the details</span></p>
+      </td>
+      <td width="50%">
+        <p class="biglink"><a class="biglink" href="{{ pathto("genindex") }}">Index</a><br/>
+           <span class="linkdescr">all functions, classes, attributes</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("search") }}">Search</a><br/>
+           <span class="linkdescr">search the documentation</span></p>
+        <p class="biglink"><a class="biglink" href="{{ pathto("yadeTechArchive") }}">Yade Technical Archive</a><br/>
+           <span class="linkdescr">documents written by and for the Yade community</span></p>
+      </td>
+    </tr>
+  </table>
+
+<!--
+  <p>
+    You can also download PDF versions of the Sphinx documentation:
+    a <a href="http://sphinx.pocoo.org/sphinx.pdf">version</a> generated from
+    the LaTeX Sphinx produces, and
+    a <a href="http://sphinx.pocoo.org/sphinx-rst2pdf.pdf">version</a> generated
+    by rst2pdf.
+  </p>
+
+  <h2>Examples</h2>
+  <p>Links to documentation generated with Sphinx can be found on the
+    <a href="{{ pathto("examples") }}">Projects using Sphinx</a> page.
+  </p>
+  <p>
+    For examples of how Sphinx source files look, use the &#8220;Show
+    source&#8221; links on all pages of the documentation apart from this
+    welcome page.
+  </p>
+
+  <p>You may also be interested in the very nice
+    <a href="http://matplotlib.sourceforge.net/sampledoc/">tutorial</a> on how to
+    create a customized documentation using Sphinx written by the matplotlib
+    developers.</p>
+
+  <p>There is a <a href="http://sphinx-users.jp/doc10/">Japanese translation</a>
+    of this documentation, thanks to Yoshiki Shibukawa.</p>
+
+  <h2>Get Sphinx</h2>
+  <p>
+    Sphinx is available as an <a
+    href="http://peak.telecommunity.com/DevCenter/EasyInstall">easy-install</a>able
+    package on the <a href="http://pypi.python.org/pypi/Sphinx">Python Package
+    Index</a>.
+  </p>
+  <p>The code can be found in a Mercurial repository, at
+    <tt>http://bitbucket.org/birkenfeld/sphinx/</tt>.</p>
+-->
+
+{% endblock %}

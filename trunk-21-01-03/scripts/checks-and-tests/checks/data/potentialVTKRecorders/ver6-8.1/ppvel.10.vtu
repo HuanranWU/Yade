@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian" header_type="UInt32" compressor="vtkZLibDataCompressor">
+  <UnstructuredGrid>
+    <Piece NumberOfPoints="2" NumberOfCells="2">
+      <PointData>
+        <DataArray type="Float32" Name="linVelVec" NumberOfComponents="3" format="ascii" RangeMin="0.0051841079257" RangeMax="0.0051841079257">
+          -0.0051841079257 0 -0 0.0051841079257 -0 0
+        </DataArray>
+        <DataArray type="Float32" Name="angVelVec" NumberOfComponents="3" format="ascii" RangeMin="5.3253272969e-32" RangeMax="5.3253272969e-32">
+          -0 4.6084327383e-32 -2.6686060997e-32 0 -4.6084327383e-32 2.6686060997e-32
+        </DataArray>
+        <DataArray type="Float32" Name="linVelLen" format="ascii" RangeMin="0.0051841079257" RangeMax="0.0051841079257">
+          0.0051841079257 0.0051841079257
+        </DataArray>
+        <DataArray type="Float32" Name="angVelLen" format="ascii" RangeMin="5.3253273639e-32" RangeMax="5.3253273639e-32">
+          5.3253273639e-32 5.3253273639e-32
+        </DataArray>
+      </PointData>
+      <CellData>
+      </CellData>
+      <Points>
+        <DataArray type="Float32" Name="Points" NumberOfComponents="3" format="ascii" RangeMin="2.8512742167e-10" RangeMax="0.066666670144">
+          -2.8512742167e-10 -0 0 0.066666670144 0 -0
+        </DataArray>
+      </Points>
+      <Cells>
+        <DataArray type="Int64" Name="connectivity" format="ascii" RangeMin="0" RangeMax="1">
+          0 1
+        </DataArray>
+        <DataArray type="Int64" Name="offsets" format="ascii" RangeMin="1" RangeMax="2">
+          1 2
+        </DataArray>
+        <DataArray type="UInt8" Name="types" format="ascii" RangeMin="1" RangeMax="1">
+          1 1
+        </DataArray>
+      </Cells>
+    </Piece>
+  </UnstructuredGrid>
+</VTKFile>

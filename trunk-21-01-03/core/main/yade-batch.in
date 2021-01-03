@@ -1,0 +1,622 @@
+#!${pyExecutable}
+# encoding: utf-8
+#
+# vim: syntax=python
+# portions © 2008 Václav Šmilauer <eudoxos@arcig.cz>
+
+from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import range
+from builtins import object
+import os, sys, _thread, time, logging, pipes, socket, xmlrpc.client, re, shutil, random
+
+# Add search path for yade Python-modules
+# It allows to use both Yade-versions (packaged and self-compiled one).
+# See LP:1254708 for more details
+# (old site, fixed bug) https://bugs.launchpad.net/yade/+bug/1254708
+
+sys.path.insert(1,'${runtimePREFIX}/${LIBRARY_OUTPUT_PATH}/yade${SUFFIX}/py')
+
+#socket.setdefaulttimeout(10) 
+
+## replaced by scons automatically
+prefix,suffix='${runtimePREFIX}' if 'YADE_PREFIX' not in os.environ else os.environ['YADE_PREFIX'],'${SUFFIX}'
+
+libPATH='${LIBRARY_OUTPUT_PATH}'
+if (libPATH[1:] == '{LIBRARY_OUTPUT_PATH}'): libPATH='lib'
+
+libDir=prefix+'/'+libPATH+'/yade'+suffix # run the batch always in non-debug mode (the spawned processes do honor debuggin flag, however)
+docDir=prefix+'/share/doc/yade'+suffix
+
+imageLogo = docDir+'/img/yade-logo-note.png'
+
+sys.path.append(os.path.join(libDir,'py'))
+executable=os.path.join(prefix,'bin','yade'+suffix)
+## we just need this ...
+import yade, yade.utils, yade.config, yade.remote
+
+
+class JobInfo(object):
+	def __init__(self,num,id,command,hrefCommand,log,nCores,script,table,lineNo,affinity):
+		self.started,self.finished,self.duration,self.durationSec,self.exitStatus=None,None,None,None,None # duration is a string, durationSec is a number
+		self.command=command; self.hrefCommand=hrefCommand; self.num=num; self.log=log; self.id=id; self.nCores=nCores; self.cores=set(); self.infoSocket=None
+		self.script=script; self.table=table; self.lineNo=lineNo; self.affinity=affinity
+		self.hasXmlrpc=False
+		self.status='PENDING'
+		self.threadNum=None
+		self.plotsLastUpdate,self.plotsFile=0.,yade.Omega().tmpFilename()+'.'+yade.remote.plotImgFormat
+	def saveInfo(self):
+		log=open(self.log,'a')
+		log.write("""
+=================== JOB SUMMARY ================
+id      : %s
+status  : %d (%s)
+duration: %s
+command : %s
+started : %s
+finished: %s
+"""%(self.id,self.exitStatus,'OK' if self.exitStatus==0 else 'FAILED',self.duration,self.command,time.asctime(time.localtime(self.started)),time.asctime(time.localtime(self.finished))));
+		log.close()
+		#Show notification messasge
+		if (pynotifyAvailable):
+			statusString = ''
+			if (self.exitStatus==0):
+				statusString = 'Finished.'
+			else:
+				statusString = 'FAILED!'
+			n = pynotify.Notification("Yade", "The job %d/%d is %s Duration %s"%(self.num+1, len(jobs), statusString, self.duration), imageLogo)
+			try:
+				n.show()
+			except:
+				pass
+		
+	def ensureXmlrpc(self):
+		'Attempt to establish xmlrpc connection to the job (if it does not exist yet). If the connection could not be established, as magic line was not found in the log, return False.'
+		if self.hasXmlrpc: return True
+		for l in open(self.log,'r'):
+			if not l.startswith('XMLRPC info provider on'): continue
+			url=l[:-1].split()[4]
+			self.xmlrpcConn=xmlrpc.client.ServerProxy(url,allow_none=True,encoding="UTF-8")
+			self.hasXmlrpc=True
+			return True
+		if not self.hasXmlrpc: return False # catches the case where the magic line is not in the log yet
+	def getInfoDict(self):
+		if self.status!='RUNNING': return None
+		if not self.ensureXmlrpc(): return None
+		return self.xmlrpcConn.basicInfo()
+	def updatePlots(self):
+		global opts
+		if self.status!='RUNNING': return
+		if not self.ensureXmlrpc(): return
+		if time.time()-self.plotsLastUpdate<opts.plotTimeout: return
+		self.plotsLastUpdate=time.time()
+		img=self.xmlrpcConn.plot()
+		if not img:
+			if os.path.exists(self.plotsFile): os.remove(self.plotsFile)
+			return
+		f=open(self.plotsFile,'wb')
+		f.write(img.data)
+		f.close()
+		#print yade.remote.plotImgFormat,'(%d bytes) written to %s'%(os.path.getsize(self.plotsFile),self.plotsFile)
+
+	def htmlStats(self):
+		ret='<tr>'
+		ret+='<td>%s</td>'%self.id
+		if self.status=='PENDING': ret+='<td bgcolor="grey">(pending)</td>'
+		elif self.status=='RUNNING': ret+='<td bgcolor="yellow">%s<br><hr><br><a href="/jobs/%d/askforstop">Stop</a></td>'%(t2hhmmss(time.time()-self.started),self.num)
+		elif self.status=='DONE': ret+='<td bgcolor="%s">%s</td>'%('lime' if self.exitStatus==0 else 'red',self.duration)
+		info=self.getInfoDict()
+		self.updatePlots() # checks for last update time
+		if info:
+			ret+='<td>'
+			if info['stopAtIter']>0:
+				ret+='<nobr>%2.2f%% done</nobr><br/><nobr>step %d/%d</nobr>'%(info['iter']*100./info['stopAtIter'],info['iter'],info['stopAtIter'])
+				finishTime = str(time.ctime(time.time()+int((round(info['stopAtIter'] - info['iter'])/info['speed']))))
+				ret+='<br/><font size="1"><nobr>%s finishes</nobr></font><br/>'%finishTime
+			else: ret+='<nobr>step %d</nobr>'%(info['iter'])
+			if info['realtime']!=0: ret+='<br/><nobr>speed %g/sec</nobr>'%(info['speed'])
+			ret+='<br/><nobr>%d bodies</nobr><br/><nobr>%d intrs</nobr>'%(info['numBodies'],info['numIntrs'])
+			ret+='</td>'
+		else:
+			ret+='<td> (no info) </td>'
+		ret+='<td>%d%s</td>'%(self.nCores,(' ('+','.join([str(c) for c in self.cores])+')') if self.cores and self.status=='RUNNING' else '')
+		# TODO: make clickable so that it can be served full-size
+		if os.path.exists(self.plotsFile):
+			img='<img src="/jobs/%d/plots" width="300px" alt="[plots]">'%(self.num)
+			ret+='<td><a href="/jobs/%d/plots">%s</a></td>'%(self.num,img)
+		else: ret+='<td> (no plots) </td>'
+		ret+='<td>%s</td>'%self.hrefCommand
+		ret+='</tr>'
+		return ret
+				
+	def stopJob(self):
+		if self.status!='RUNNING': return None
+		if not self.ensureXmlrpc(): return None
+		self.xmlrpcConn.stop()
+		return ("The job #%s is stopped<br><a href=\"./../../\">Return back to statistic page</a>"%(self.num))
+	
+def t2hhmmss(dt): return '%02d:%02d:%02d'%(dt//3600,(dt%3600)//60,(dt%60))
+
+def totalRunningTime():
+	tt0,tt1=[j.started for j in jobs if j.started],[j.finished for j in jobs if j.finished]+[time.time()]
+	# it is safe to suppose that 
+	if len(tt0)==0: return 0 # no job has been started at all
+	return max(tt1)-min(tt0)
+
+def globalHtmlStats():
+	t0=min([j.started for j in jobs if j.started!=None])
+	unfinished=len([j for j in jobs if j.status!='DONE'])
+	nUsedCores=sum([j.nCores for j in jobs if j.status=='RUNNING'])
+	global maxJobs
+	if unfinished:
+		ret='<p>Running for %s, since %s.</p>'%(t2hhmmss(totalRunningTime()),time.ctime(t0))
+	else:
+		failed=len([j for j in jobs if j.exitStatus!=0])
+		lastFinished=max([j.finished for j in jobs])
+		# FIXME: do not report sum of runnign time of all jobs, only the real timespan
+		ret='<p><span style="background-color:%s">Finished</span>, idle for %s, running time %s since %s.</p>'%('red' if failed else 'lime',t2hhmmss(time.time()-lastFinished),t2hhmmss(sum([j.finished-j.started for j in jobs if j.started is not None])),time.ctime(t0))
+	ret+='<p>Pid %d'%(os.getpid())
+	if opts.globalLog: ret+=', log <a href="/log">%s</a>'%(opts.globalLog)
+	ret+='</p>'
+	allCores,busyCores=set(range(0,maxJobs)),set().union(*(j.cores for j in jobs if j.status=='RUNNING'))
+	ret+='<p>%d cores available, %d used + %d free.</p>'%(maxJobs,nUsedCores,maxJobs-nUsedCores)
+	# show busy and free cores; gives nonsense if not all jobs have CPU affinity set
+	# '([%s] = [%s] + [%s])'%(','.join([str(c) for c in allCores]),','.join([str(c) for c in busyCores]),','.join([str(c) for s in (allCores-busyCores)]))
+	ret+='<h3>Jobs</h3>'
+	nFailed=len([j for j in jobs if j.status=='DONE' and j.exitStatus!=0])
+	ret+='<p><b>%d</b> total, <b>%d</b> <span style="background-color:yellow">running</span>, <b>%d</b> <span style="background-color:lime">done</span>%s</p>'%(len(jobs),len([j for j in jobs if j.status=='RUNNING']), len([j for j in jobs if j.status=='DONE']),' (<b>%d <span style="background-color:red"><b>failed</b></span>)'%nFailed if nFailed>0 else '')
+	return ret
+
+from http.server import BaseHTTPRequestHandler,HTTPServer
+import socket,re
+class HttpStatsServer(BaseHTTPRequestHandler):
+	favicon=None # binary favicon, created when first requested
+	def do_GET(self):
+		if not self.path or self.path=='/': self.sendGlobal()
+		else:
+			if self.path=='/favicon.ico':
+				if not self.__class__.favicon:
+					import base64
+					self.__class__.favicon=base64.b64decode(yade.remote.b64favicon)
+				self.sendRawHttp(self.__class__.favicon,contentType='image/vnd.microsoft.icon')
+				return
+			elif self.path=='/log' and opts.globalLog:
+				self.sendTextFile(opts.globalLog,refresh=opts.refresh)
+				return
+			jobMatch=re.match('/jobs/([0-9]+)/(.*)',self.path)
+			if not jobMatch:
+				self.send_error(404,self.path); return
+			jobId=int(jobMatch.group(1))
+			if jobId>=len(jobs):
+				self.send_error(404,self.path); return
+			job=jobs[jobId]
+			rest=jobMatch.group(2)
+			if rest=='plots':
+				job.updatePlots() # internally checks for last update time
+				self.sendRawFile(job.plotsFile,contentType=yade.remote.plotImgMimetype,refresh=(0 if job.status=='DONE' else opts.refresh))
+			elif rest=='log':
+				if not os.path.exists(job.log):
+					self.send_error(404,self.path); return
+				## once we authenticate properly, send the whole file
+				## self.sendTextFile(jobs[jobId].log,refresh=opts.refresh)
+				## now we have to filter away the cookie
+				cookieRemoved=False; data=''
+				for l in open(job.log):
+					if not cookieRemoved and l.startswith('TCP python prompt on'):
+						ii=l.find('auth cookie `'); l=l[:ii+13]+'******'+l[ii+19:]; cookieRemoved=True
+					data+=l
+				self.sendHttp(data,contentType='text/plain;charset=utf-8;',refresh=(0 if job.status=='DONE' else opts.refresh))
+			elif rest=='script':
+				self.sendPygmentizedFile(job.script,linenostep=5)
+			elif rest=='table':
+				if not job.table: return
+				self.sendPygmentizedFile(job.table,hl_lines=[job.lineNo],linenostep=1)
+			elif rest=='stop':
+				self.sendHttp(job.stopJob(),contentType='text/html',refresh=(0 if job.status=='DONE' else opts.refresh))
+			elif rest=='askforstop':
+				self.sendHttp('Are you sure, you want to stop job #%d?<br><a href="/jobs/%d/stop"><font color="red">Stop</font></a></td><br><a href="./../../"><font color="green" size="+2"><b>Cancel</b><green></a></td>'%(job.num,job.num),contentType='text/html',refresh=(0 if job.status=='DONE' else opts.refresh))
+				
+			else: self.send_error(404,self.path)
+		return
+	def log_request(self,req): pass
+	def sendGlobal(self):
+		html='<HTML><TITLE>Yade-batch at %s overview</TITLE><BODY>\n'%(socket.gethostname())
+		html+=globalHtmlStats()
+		html+='<TABLE border=1><tr><th>id</th><th>status</th><th>info</th><th>cores</th><th>plots</th><th>command</th></tr>\n'
+		for j in jobs: html+=j.htmlStats()+'\n'
+		html+='</TABLE></BODY></HTML>'
+		self.sendHttp(html,contentType='text/html',refresh=opts.refresh) # refresh sent as header
+	def sendTextFile(self,fileName,**headers):
+		if not os.path.exists(fileName): self.send_error(404); return
+		import codecs
+		f=codecs.open(fileName,encoding='utf-8')
+		self.sendHttp(f.read(),contentType='text/plain;charset=utf-8;',**headers)
+	def sendFile(self,fileName,contentType,**headers):
+		if not os.path.exists(fileName): self.send_error(404); return
+		f=open(fileName)
+		self.sendHttp(f.read(),contentType=contentType,**headers)
+	def sendHttp(self,data,contentType,**headers):
+		"Send file over http, using appropriate content-type. Headers are converted to strings. The *refresh* header is handled specially: if the value is 0, it is not sent at all."
+		self.send_response(200)
+		self.send_header('Content-type',contentType)
+		if 'refresh' in headers and headers['refresh']==0: del headers['refresh']
+		for h in headers: self.send_header(h,str(headers[h]))
+		self.end_headers()
+		self.wfile.write(data.encode('utf-8'))
+		global httpLastServe
+		httpLastServe=time.time()
+	def sendRawFile(self, fileName, contentType,**headers):
+			if not os.path.exists(fileName): self.send_error(404); return
+			f=open(fileName, 'rb');
+			self.sendRawHttp(f.read(),contentType=contentType,**headers)
+	def sendRawHttp(self,data,contentType,**headers):
+			"Send raw file (like images) over http, using appropriate content-type. Headers are converted to strings. The *refresh* header is handled specially: if the value is 0, it is not sent at all."
+			self.send_response(200)
+			self.send_header('Content-type',contentType)
+			if 'refresh' in headers and headers['refresh']==0: del headers['refresh']
+			for h in headers: self.send_header(h,str(headers[h]))
+			self.end_headers()
+			self.wfile.write(data);
+			global httpLastServe
+			httpLastServe=time.time()
+	def sendPygmentizedFile(self,f,**kw):
+		if not os.path.exists(f):
+			self.send_error(404); return
+		try:
+			import codecs
+			from pygments import highlight
+			from pygments.lexers import PythonLexer
+			from pygments.formatters import HtmlFormatter
+			data=highlight(codecs.open(f,encoding='utf-8').read(),PythonLexer(),HtmlFormatter(linenos=True,full=True,encoding='utf-8',title=os.path.abspath(f),**kw))
+			self.sendRawHttp(data,contentType='text/html;charset=utf-8;'); #Already encoded, send Raw
+		except ImportError:
+			self.sendTextFile(f)
+def runHttpStatsServer():
+	maxPort=11000; port=9080
+	while port<maxPort:
+		try:
+			server=HTTPServer(('',port),HttpStatsServer)
+			import _thread; _thread.start_new_thread(server.serve_forever,())
+			print("http://localhost:%d shows batch summary"%port)
+			break
+		except socket.error:
+			port+=1
+	if port==maxPort:
+		print("WARN: No free port in range 9080-11000, not starting HTTP stats server!")
+
+
+def runJob(job):
+	job.status='RUNNING'
+	job.started=time.time();
+	print('#%d (%s%s%s) started on %s'%(job.num,job.id,'' if job.nCores==1 else '/%d'%job.nCores,(' ['+','.join([str(c) for c in job.cores])+']') if job.cores else '',time.asctime()))
+	#print '#%d cores',%(job.num,job.cores)
+	if job.cores:
+		def coresReplace(s): return s.replace('[threadspec]','--cores=%s'%(','.join(str(c) for c in job.cores)))
+		job.command=coresReplace(job.command)
+		job.hrefCommand=coresReplace(job.hrefCommand)
+	else:
+		job.command=job.command.replace('[threadspec]','--threads=%d'%job.nCores); job.hrefCommand=job.hrefCommand.replace('[threadspec]','--threads=%d'%job.nCores)
+	job.exitStatus=os.system(job.command)
+	if job.exitStatus!=0 and len([l for l in open(job.log) if l.startswith('Yade: normal exit.')])>0: job.exitStatus=0
+	job.finished=time.time()
+	dt=job.finished-job.started;
+	job.durationSec=dt
+	job.duration=t2hhmmss(dt)
+	strStatus='done   ' if job.exitStatus==0 else 'FAILED '
+	job.status='DONE'
+	havePlot=False
+	if os.path.exists(job.plotsFile):
+		f=(job.log[:-3] if job.log.endswith('.log') else job.log+'.')+yade.remote.plotImgFormat
+		shutil.copy(job.plotsFile,f)
+		job.plotsFile=f
+		havePlot=True
+	print("#%d (%s%s) %s (exit status %d), duration %s, log %s%s"%(job.num,job.id,'' if job.nCores==1 else '/%d'%job.nCores,strStatus,job.exitStatus,job.duration,job.log,(', plot %s'%(job.plotsFile) if havePlot else '')))
+	job.saveInfo()
+	
+def runJobs(jobs,numCores):
+	running,pending=0,len(jobs)
+	inf=1000000
+	while (running>0) or (pending>0):
+		pending,running,done=sum([j.nCores for j in jobs if j.status=='PENDING']),sum([j.nCores for j in jobs if j.status=='RUNNING']),sum([j.nCores for j in jobs if j.status=='DONE'])
+		numFreeCores=numCores-running
+		minRequire=min([inf]+[j.nCores for j in jobs if j.status=='PENDING'])
+		if minRequire==inf: minRequire=0
+		#print pending,'pending;',running,'running;',done,'done;',numFreeCores,'free;',minRequire,'min'
+		overloaded=False
+		if minRequire>numFreeCores and running==0: overloaded=True # a job wants more cores than the total we have
+		pendingJobs=[j for j in jobs if j.status=='PENDING']
+		if opts.randomize: random.shuffle(pendingJobs)
+		for j in pendingJobs:
+			if j.nCores<=numFreeCores or overloaded:
+				freeCores=set(range(0,numCores))-set().union(*(j.cores for j in jobs if j.status=='RUNNING'))
+				#print 'freeCores:',freeCores,'numFreeCores:',numFreeCores,'overloaded',overloaded
+				if not overloaded:
+					# only set cores if CPU affinity is desired; otherwise, just numer of cores is used
+					if j.affinity: j.cores=list(freeCores)[0:j.nCores] # take required number of free cores
+				# if overloaded, do not assign cores directly
+				_thread.start_new_thread(runJob,(j,))
+				break
+		time.sleep(.5)
+		sys.stdout.flush()
+
+
+import sys,re,os
+try:
+	import argparse
+except ImportError: # argparse not present, print error message
+	raise RuntimeError("\n\nPlease install 'python-argparse' package.\n")
+
+def getNumCores():
+	nCpu=1
+	try:
+		nCpu=len([l for l in open('/proc/cpuinfo','r') if l.find('processor')==0])
+	except:
+		print('WARNING: No cpuinfo available! Setting the maximal number of processors 1')
+		pass
+		
+	if "OMP_NUM_THREADS" in os.environ: return min(int(os.environ['OMP_NUM_THREADS']),nCpu)
+	return nCpu
+numCores=getNumCores()
+maxOmpThreads=numCores if 'OpenMP' in yade.config.features else 1
+features,version='${CONFIGURED_FEATS}'.split(','),'${realVersion}'
+if (features[0]==''): features=features[1:]
+
+prog = os.path.basename(sys.argv[0])
+parser=argparse.ArgumentParser(usage='%s [options] [ TABLE [SIMULATION.py] | SIMULATION.py[/nCores] [...] ]'%prog,description='%s runs yade simulation multiple times with different parameters.\n\nSee https://yade-dem.org/sphinx/user.html#batch-queuing-and-execution-yade-batch for details.\n\nBatch can be specified either with parameter table TABLE (must not end in .py), which is either followed by exactly one SIMULATION.py (must end in .py), or contains !SCRIPT column specifying the simulation to be run. The second option is to specify multiple scripts, which can optionally have /nCores suffix to specify number of cores for that particular simulation (corresponds to !THREADS column in the parameter table), e.g. sim.py/3.'%prog)
+parser.add_argument('-j','--jobs',dest='maxJobs',type=int,help="Maximum number of simultaneous threads to run (default: number of cores, further limited by OMP_NUM_THREADS if set by the environment: %d)"%numCores,metavar='NUM',default=numCores)
+parser.add_argument('-v','--version',help='Print version and exit.',dest='version',action='store_true')
+parser.add_argument('--job-threads',dest='defaultThreads',type=int,help="Default number of threads for one job; can be overridden by per-job with !THREADS (or !OMP_NUM_THREADS) column. Defaults to 1.",metavar='NUM',default=1)
+parser.add_argument('--force-threads',action='store_true',dest='forceThreads',help='Force jobs to not use more cores than the maximum (see \-j), even if !THREADS colums specifies more.')
+parser.add_argument('--log',dest='logFormat',help='Format of job log files: must contain a $, %% or @, which will be replaced by script name, line number or by description column respectively (default: $.@.log)',metavar='FORMAT',default='$.@.log')
+parser.add_argument('--global-log',dest='globalLog',help='Filename where to redirect output of yade-batch itself (as opposed to \-\-log); if not specified (default), stdout/stderr are used',metavar='FILE')
+parser.add_argument('-l','--lines',dest='lineList',help='Lines of TABLE to use, in the format 2,3-5,8,11-13 (default: all available lines in TABLE)',metavar='LIST')
+parser.add_argument('--nice',dest='nice',type=int,help='Nice value of spawned jobs (default: 10)',default=10)
+parser.add_argument('--cpu-affinity',dest='affinity',action='store_true',help='Bind each job to specific CPU cores; cores are assigned in a quasi-random order, depending on availability at the moment the jobs is started. Each job can override this setting by setting AFFINE column.')
+parser.add_argument('--executable',dest='executable',help='Name of the program to run (default: %s). Jobs can override with !EXEC column.'%executable,default=executable,metavar='FILE')
+parser.add_argument('--gnuplot',dest='gnuplotOut',help='Gnuplot file where gnuplot from all jobs should be put together',default=None,metavar='FILE')
+parser.add_argument('--dry-run',action='store_true',dest='dryRun',help='Do not actually run (useful for getting gnuplot only, for instance)',default=False)
+parser.add_argument('--http-wait',action='store_true',dest='httpWait',help='Do not quit if still serving overview over http repeatedly',default=False)
+parser.add_argument('--plot-update',type=int,dest='plotAlwaysUpdateTime',help='Interval (in seconds) at which job plots will be updated even if not requested via HTTP. Non-positive values will make the plots not being updated and saved unless requested via HTTP (see \-\-plot-timeout for controlling maximum age of those).  Plots are saved at exit under the same name as the log file, with the .log extension removed. (default: 120 seconds)',metavar='TIME',default=120)
+parser.add_argument('--plot-timeout',type=int,dest='plotTimeout',help='Maximum age (in seconds) of plots served over HTTP; they will be updated if they are older. (default: 30 seconds)',metavar='TIME',default=30)
+parser.add_argument('--refresh',type=int,dest='refresh',help='Refresh rate of automatically reloaded web pages (summary, logs, ...).',metavar='TIME',default=30)
+parser.add_argument('--timing',type=int,dest='timing',default=0,metavar='COUNT',help='Repeat each job COUNT times, and output a simple table with average/variance/minimum/maximum job duration; used for measuring how various parameters affect execution time. Jobs can override the global value with the !COUNT column.')
+parser.add_argument('--timing-output',type=str,metavar='FILE',dest='timingOut',default=None,help='With \-\-timing, save measured durations to FILE, instead of writing to standard output.')
+parser.add_argument('--randomize',action='store_true',dest='randomize',help='Randomize job order (within constraints given by assigned cores).')
+parser.add_argument('--disable-pynotify',action='store_true',dest='disablePynotify',help='Disable screen notifications')
+parser.add_argument('args',nargs=argparse.REMAINDER,help=argparse.SUPPRESS) # see argparse doc, par.disable_interspersed_args() from optargs module
+parser.add_argument('-L','--libs',help='import libraries at startup before importing yade libs. May be used when the ordering of imports matter (see e.g. https://bugs.launchpad.net/yade/+bug/1183402/comments/3). The option can be used multiple times, as in "yade -Llib1 -Llib2"',default=None,action='append',dest='impLibraries',type=str)
+#parser.add_argument('--serial',action='store_true',dest='serial',default=False,help='Run all jobs serially, even if there are free cores
+opts=parser.parse_args()
+args = opts.args
+
+logFormat,lineList,maxJobs,nice,executable,gnuplotOut,dryRun,httpWait,globalLog=opts.logFormat,opts.lineList,opts.maxJobs,opts.nice,opts.executable,opts.gnuplotOut,opts.dryRun,opts.httpWait,opts.globalLog
+
+if opts.impLibraries:
+	print("\n\n ------------------------ IMPORTING ---------------------------------------\n\n")
+	sys.path.append('.')
+	for lib in opts.impLibraries:
+		print("\n\n ------------------------ IMPORTING ---------------------------------------\n\n")
+		print(lib)
+		__import__(lib)
+
+if opts.version:
+	print('Yade version: %s, features: %s'%(version,','.join(features)))
+	sys.exit(0)
+
+if globalLog:
+	print('Redirecting all output to',globalLog)
+	sys.stderr=open(globalLog,"w")
+	sys.stdout=sys.stderr
+
+if len([1 for a in args if re.match('.*\.py(/[0-9]+)?',a)])==len(args) and len(args)!=0:
+	# if all args end in .py, they are simulations that we will run
+	table=None; scripts=args
+elif len(args)==2:
+	table,scripts=args[0],[args[1]]
+elif len(args)==1:
+	table,scripts=args[0],[]
+else:
+	parser.print_help()
+	sys.exit(1)
+
+pynotifyAvailable = False
+n = 0;
+if not opts.disablePynotify:
+	try:
+		import pynotify
+		pynotifyAvailable = True
+		pynotify.init("Yade")
+		# check server capabilities, I need to do this because otherwise it would not detect that server is not present.
+		# https://notify2.readthedocs.io/en/latest/
+		pynotify.get_server_caps()
+	except Exception:
+		pynotifyAvailable = False
+
+print("Will run simulation(s) %s using `%s', nice value %d, using max %d cores."%(scripts,executable,nice,maxJobs))
+
+if table:
+	reader=yade.utils.TableParamReader(table)
+	params=reader.paramDict()
+	availableLines=list(params.keys())
+
+	print("Will use table `%s', with available lines"%(table),', '.join([str(i) for i in availableLines])+'.')
+
+	if lineList:
+		useLines=[]
+		def numRange2List(s):
+			ret=[]
+			for l in s.split(','):
+				if "-" in l: ret+=list(range(*[int(s) for s in l.split('-')])); ret+=[ret[-1]+1]
+				else: ret+=[int(l)]
+			return ret
+		useLines0=numRange2List(lineList)
+		for l in useLines0:
+			if l not in availableLines: logging.warn('Skipping unavailable line %d that was requested from the command line.'%l)
+			else: useLines+=[l]
+	else: useLines=availableLines
+	print("Will use lines ",', '.join([str(i)+' (%s)'%params[i]['description'] for i in useLines])+'.')
+else:
+	print("Running %d stand-alone simulation(s) in batch mode."%(len(scripts)))
+	useLines=[]
+	params={}
+	for i,s in enumerate(scripts):
+		fakeLineNo=-i-1
+		useLines.append(fakeLineNo)
+		params[fakeLineNo]={'description':'default','!SCRIPT':s}
+		# fix script and set threads if script.py/num
+		m=re.match('(.*)(/[0-9]+)$',s)
+		if m:
+			params[fakeLineNo]['!SCRIPT']=m.group(1)
+			params[fakeLineNo]['!THREADS']=int(m.group(2)[1:])
+jobs=[]
+executables=set()
+logFiles=[]
+for i,l in enumerate(useLines):
+	script=scripts[0] if len(scripts)>0 else None
+	envVars=[]
+	nCores=opts.defaultThreads
+	jobExecutable=executable
+	jobAffinity=opts.affinity
+	jobCount=opts.timing
+	for col in list(params[l].keys()):
+		if col[0]!='!': continue
+		val=params[l][col]
+		if col=='!OMP_NUM_THREADS' or col=='!THREADS': nCores=int(val)
+		elif col=='!EXEC': jobExecutable=val
+		elif col=='!SCRIPT': script=val
+		elif col=='!AFFINITY': jobAffinity=eval(val)
+		elif col=='!COUNT': jobCount=eval(val)
+		else: envVars+=['%s=%s'%(head[1:],values[l][col])]
+	if not script:
+		raise ValueError('When only batch table is given without script to run, it must contain !SCRIPT column with simulation to be run.')
+	logFile=logFormat.replace('$',script).replace('%',str(l)).replace('@',params[l]['description'])
+	
+	if (len(logFile)>230):                              #For very long files, to prevent system errors. 
+		logFile = logFile[0:230]+'_'+str(l)+logFile[-4:]  #l is added to prevent name duplications.
+	
+	if nCores>maxJobs:
+		if opts.forceThreads:
+			logging.info('Forcing job #%d to use only %d cores (max available) instead of %d requested'%(i,maxJobs,nCores))
+			nCores=maxJobs
+		else:
+			logging.warning('WARNING: job #%d will use %d cores but only %d are available'%(i,nCores,maxJobs))
+		if 'OpenMP' not in yade.config.features and nCores>1:
+			logging.warning('Job #%d will be uselessly run with %d threads (compiled without OpenMP support).'%(i,nCores))
+	executables.add(jobExecutable)
+	# compose command-line: build the hyper-linked variant, then strip HTML tags (ugly, but ensures consistency)
+	for j in range(0,opts.timing if opts.timing>0 else 1):
+		jobNum=len(jobs)
+		logFile2=logFile+('.%d'%j if opts.timing>0 else '')
+		# append numbers to log file if it already exists, to prevent overwriting
+		if logFile2 in logFiles:
+			i=0;
+			while logFile2+'.%d'%i in logFiles: i+=1
+			logFile2+='.%d'%i
+		logFiles.append(logFile2)
+		env='YADE_BATCH='
+		if table: env+='<a href="jobs/%d/table">%s:%d</a>'%(jobNum,table,l) # keep YADE_BATCH empty (but still defined) if running a single simulation
+		env+=' DISPLAY= %s '%(' '.join(envVars))
+		cmd='%s%s [threadspec] %s -x <a href="jobs/%d/script">%s</a>'%(jobExecutable,'','--nice=%s'%nice if nice!=None else '',i,script)
+		log='> <a href="jobs/%d/log">%s</a> 2>&1'%(jobNum,pipes.quote(logFile2))
+		hrefCmd=env+cmd+log
+		fullCmd=re.sub('(<a href="[^">]+">|</a>)','',hrefCmd)
+		desc=params[l]['description']
+		if '!SCRIPT' in list(params[l].keys()): desc=script+'.'+desc # prepend filename if script is specified explicitly
+		if opts.timing>0: desc+='[%d]'%j
+		jobs.append(JobInfo(jobNum,desc,fullCmd,hrefCmd,logFile2,nCores,script=script,table=table,lineNo=l,affinity=jobAffinity))
+
+print("Master process pid",os.getpid())
+
+print("Job summary:")
+for job in jobs:
+	print('   #%d (%s%s):'%(job.num,job.id,'' if job.nCores==1 else '/%d'%job.nCores),job.command)
+sys.stdout.flush()
+
+
+httpLastServe=0
+runHttpStatsServer()
+if opts.plotAlwaysUpdateTime>0:
+	# update plots periodically regardless of whether they are requested via HTTP
+	def updateAllPlots():
+		time.sleep(opts.plotAlwaysUpdateTime)
+		for job in jobs: job.updatePlots()
+	_thread.start_new_thread(updateAllPlots,())
+
+# OK, go now
+if not dryRun: runJobs(jobs,maxJobs)
+
+print('All jobs finished, total time ',t2hhmmss(totalRunningTime()))
+
+plots=[]
+for j in jobs:
+	if not os.path.exists(j.plotsFile): continue
+	plots.append(j.plotsFile)
+if plots: print('Plot files:',' '.join(plots))
+
+# for easy grepping in logfiles:
+print('Log files:',' '.join([j.log for j in jobs]))
+
+# write timing table
+if opts.timing>0:
+	if opts.timingOut:
+		print('Writing gathered timing information to',opts.timingOut)
+		try:
+			out=open(opts.timingOut,'w')
+		except IOError:
+			logging.warn('Unable to open file %s for timing output, writing to stdout.'%opts.timingOut)
+			out=sys.stdout
+	else:
+		print('Gathered timing information:')
+		out=sys.stdout
+	# write header
+	out.write('## timing data, written '+time.asctime()+' with arguments\n##    '+' '.join(sys.argv)+'\n##\n')
+	paramNames=list(params[list(params.keys())[0]].keys()); paramNames.sort()
+	out.write('## line\tcount\tavg\tdev\trelDev\tmin\tmax\t|\t'+'\t'.join(paramNames)+'\n')
+	import math
+	for i,l in enumerate(useLines):
+		jobTimes=[j.durationSec for j in jobs if j.lineNo==l and j.durationSec!=None]
+		tSum=sum(jobTimes); tAvg=tSum/len(jobTimes)
+		tMin,tMax=min(jobTimes),max(jobTimes)
+		tDev=math.sqrt(sum((t-tAvg)**2 for t in jobTimes)/len(jobTimes))
+		tRelDev=tDev/tAvg
+		out.write('%d\t%d\t%.2f\t%.2f\t%.3g\t%.2f\t%.2f\t|\t'%(l,len(jobTimes),tAvg,tDev,tRelDev,tMin,tMax)+'\t'.join([params[l][p] for p in paramNames])+'\n')
+
+if not gnuplotOut:
+	print('Bye.')
+else:
+	print('Assembling gnuplot files…')
+	for job in jobs:
+		for l in open(job.log):
+			if l.startswith('gnuplot '):
+				job.plot=l.split()[1]
+				break
+	preamble,plots='',[]
+	for job in jobs:
+		if not 'plot' in job.__dict__:
+			print("WARN: No plot found for job "+job.id)
+			continue
+		for l in open(job.plot):
+			if l.startswith('plot'):
+				# attempt to parse the plot line
+				ll=l.split(' ',1)[1][:-1] # rest of the line, without newline
+				# replace title 'something' with title 'description: something'
+				ll,nn=re.subn(r'title\s+[\'"]([^\'"]*)[\'"]',r'title "'+job.id+r': \1"',ll)
+				if nn==0:
+					logging.error("Plot line in "+job.plot+" not parsed (skipping): "+ll)
+				plots.append(ll)
+				break
+			if not plots: # first plot, copy all preceding lines
+				preamble+=l
+	gp=open(gnuplotOut,'w')
+	gp.write(preamble)
+	gp.write('plot '+','.join(plots))
+	print("gnuplot",gnuplotOut)
+	print("Plot written, bye.")
+if httpWait and time.time()-httpLastServe<30:
+	print("(continue serving http until no longer requested  as per --http-wait)")
+	while time.time()-httpLastServe<30:
+		time.sleep(1)
+
+yade.Omega().exitNoBacktrace()

@@ -1,0 +1,891 @@
+# The previously used image:
+# image: registry.gitlab.com/yade-dev/docker-yade
+#
+# Five new images:
+# image: registry.gitlab.com/yade-dev/docker-yade:ubuntu16.04
+# image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04
+# image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04_nogui
+# image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04_foam
+# image: registry.gitlab.com/yade-dev/docker-yade:debian-stretch
+# image: registry.gitlab.com/yade-dev/docker-yade:debian-buster
+# image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+# image: registry.gitlab.com/yade-dev/docker-yade:suse15
+#
+# Useful link to validator: https://gitlab.com/yade-dev/trunk/-/ci/lint
+
+
+stages:
+  - build
+  - test
+  - pages
+  - deb
+
+# See: https://docs.gitlab.com/ee/ci/yaml/#retry
+# Skip repeats when:
+#     - always: Retry on any failure (default).
+#     - missing_dependency_failure: Retry if a dependency was missing.
+#     - runner_unsupported: Retry if the runner was unsupported.
+#     - unmet_prerequisites: Retry if the job failed to complete prerequisite tasks.
+.gitlab_runner_retry_template: &gitlab_runner_retry_definition
+  retry:
+    max: 2
+    when:
+      - unknown_failure
+      - script_failure
+      - api_failure
+      - stuck_or_timeout_failure
+      - runner_system_failure
+      - stale_schedule
+      - job_execution_timeout
+      - archived_failure
+      - scheduler_failure
+      - data_integrity_failure
+
+# If you want to compile everything also on merge_request, change this template.
+.plaftorms_template: &platforms_definition
+  only:
+    - master
+    - merge_request
+
+# stage: cmake uses ccache for faster compilation. ccache works only with -DCHUNKSIZE=1
+# Important: to get ccache to work an external volume must be mounted by gitlab-runner (in config file: /etc/gitlab-runner/config.toml)
+#            into docker directory /root/.ccache. By default in /etc/gitlab-runner/config.toml there is already this line:
+#               volumes = ["/cache"]
+#            it must be replaced with:
+#               volumes = ["/cache","/home/docker/ccache:/root/.ccache:rw"]
+#            where /home/docker/ccache is the directory in the host with write access.
+# See also : https://gitlab.com/gitlab-org/gitlab-runner/blob/master/docs/configuration/advanced-configuration.md#example-2-mount-a-host-directory-as-a-data-volume
+
+# Perhaps two more will added later
+# 1.4. only: tags       Perhaps creating tags would trigger a build, e.g. tagging a new release?
+# 1.5. only: schedules  For scheluded pipelines. Perhaps it will be e.g. for https://gitlab.com/yade-dev/trunk/issues/58
+#                       It is possible to send an environment variable to the pipeline from the schedule. So here maybe a selection of
+#                       what .deb package to build could be performed using an env variable.
+# in merge_request use the faster  linker: ld.gold. We save 2 minutes on every build.
+# in master        use the regular linker: ld.bfd.  Very rarely we might encounter linker errors. It's worth the faster build in merge_request.
+
+.make_template: &make_definition
+  <<: *platforms_definition
+  <<: *gitlab_runner_retry_definition
+  stage: build
+  script:
+    - export PYTHONUNBUFFERED=1
+    - mkdir install
+    # the command 'git diff -w --shortstat' counts the number of changes. The '-w' tells it to ignore whitespace.
+    - if [[ -e "/usr/bin/clang-format" ]] ; then
+          export CLANG_VERSION=`clang-format --version | sed -e 's/^.*version\s\([0-9]\+\).*$/\1/g'` ;
+          if [[ ${CLANG_VERSION} -ge "7" ]] ; then
+                  echo -e "\n\e[92m===\nclang-format version is $CLANG_VERSION \n===\e[0m\n" ;
+                  scripts/clang-formatter.sh ./ ;
+                  export CHANGED_LINES=`git diff -w --shortstat | sed -e 's/^.*,\s\([0-9]\+\)\sdeletion.*$/\1/g'` ;
+                  echo "CHANGED_LINES = "$CHANGED_LINES ;
+                  if [[ ${CHANGED_LINES} -ge "50" ]] ; then
+                          echo -e "\n\e[91m===\n*** ERROR *** clang-format produces very different output.\nYou can use command\n\n    scripts/clang-formatter.sh \$YOUR_FILE\n\nto fix this\nIt is possible that some other files will be modified, because apparently different versions of clang-format have (very small) differences in the output.\n===\e[0m\n \n";
+                          echo -e "\n\e[96m===\n*** NOTE *** if your formatting is better that what clang-format provides, you can use:\n\n    // clang-format off\n    ......\n    // clang-format on\n\nlike it is done with YADE_CLASS_* macros in all .hpp files.\n===\e[0m\n" ;
+                          echo -e "\n \n\e[95m*** See the most affected files below ***\e[0m\n \n" ;
+                          git diff --stat ;
+                          git diff -w --stat ;
+                          echo -e "\n \n\e[95mLines\nAdded | Removed\e[0m\n" ;
+                          git diff --numstat ;
+                          echo -e "\n \n\e[95m*** Full 'git diff' is in artifacts path ./install/reformat.txt ***\e[0m\n" ;
+                          echo -e "\e[95m*** Apart from 'scripts/clang-formatter.sh ./', you also can download the diff and use the following command ***\e[0m\n" ;
+                          echo -e "\e[95m    patch -p1 < ./reformat.txt\e[0m\n \n" ;
+                          git diff > ./install/reformat.txt ;
+                          exit 1 ;
+                  else
+                          echo -e "\n\e[92m===\nclang-format check OK\n===\e[0m\n" ;
+                  fi;
+          else
+                  echo -e "\n\e[93m===\nSkipping  clang-format check (version too old)\n===\e[0m\n" ;
+          fi;
+      else
+          echo -e "\n\e[93m===\nSkipping  clang-format check (can't find clang-format)\n===\e[0m\n" ;
+      fi;
+    # remove any clang formatting changes
+    - git diff -w
+    - git reset --hard
+    - git diff
+    - git status
+    - git log --oneline -n 5
+    # OK source code is as it should be.
+    - export GCC_COLORS="error=01;31:warning=01;35:note=01;36:range1=04;32:range2=04;34:locus=93:quote=07;96:fixit-insert=92:fixit-delete=91:diff-filename=01;91:diff-hunk=33:diff-delete=31:diff-insert=32"
+    - export CXXFLAGS="-fdiagnostics-color=always $CXXFLAGS"
+    - echo $CXXFLAGS
+    - mkdir build && cd build
+    - echo $EXTRA_CMAKE_ARGS
+    - cmake -DSUFFIX=-ci -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_INSTALL_PREFIX=../install  $EXTRA_CMAKE_ARGS -DPYTHON_VERSION=3 -DDISABLE_SAVE_TEMPS=1 ..
+    - export LINK_GOLD=$(case    $CI_PIPELINE_SOURCE in "merge_request_event") echo "20" ;; *) echo "10";; esac)
+    - export LINK_REGULAR=$(case $CI_PIPELINE_SOURCE in "merge_request_event") echo "10" ;; *) echo "20";; esac)
+    - ld --version
+    - update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.gold" $LINK_GOLD
+    - update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.bfd" $LINK_REGULAR
+    - ld --version
+    # 4pak has 64cores 256GB RAM, and has concurrent = 5 ← amount of simultaneous gitlab jobs
+    # 6pak has 48cores 128GB RAM, and has concurrent = 3 , but 6pak must have a little smaller load than the maximum
+    # 7pak has 48cores 128GB RAM, and has concurrent = 4
+    # The goal is to maximize effciency while at the same time the occasionall very heavy jobs (recompilation where ccache can't help) must not bring down the server to halt.
+    # So let's assume that JOBSUM*concurrent < 1.3*cores and examine how this works out.
+    # Current measurements indicate that non-ccached recompilation full CI job is 34 minutes, while ccached one can be as low as 10 minutes.
+    - export JOBSNUM=$(case $CI_RUNNER_DESCRIPTION in
+        "y4pak") echo "17" ;;
+        "c4pak") echo "17" ;;
+        "y6pak") echo "19" ;;
+        "c6pak") echo "19" ;;
+        "y7pak") echo "16" ;;
+        "c7pak") echo "16" ;;
+        "y8pak") echo "5"  ;;
+        "c8pak") echo "5"  ;;
+        "y9pak") echo "5"  ;;
+        "c9pak") echo "5"  ;;
+        "yade-runner") echo "12" ;;
+        "yade-runner-01") echo "1" ;;
+        *) echo "8";;
+        esac)
+    - echo $JOBSNUM
+    - if [[ ${CI_RUNNER_DESCRIPTION} == "y8pak" || ${CI_RUNNER_DESCRIPTION} == "c8pak" || ${CI_RUNNER_DESCRIPTION} == "y9pak" || ${CI_RUNNER_DESCRIPTION} == "c9pak" ]] ; then export MAX_CCACHE="500.0G"; else export MAX_CCACHE="200.0G"; fi
+    - echo "max_size = ${MAX_CCACHE}" > ~/.ccache/ccache.conf
+    - ccache -s
+    - echo $SKIP_TEST
+    - if [[ ${SKIP_TEST} == "SKIP_TEST" ]] ; then echo -e "\n\e[93m===\nSkipping this build, because it's a WIP merge request.\n===\e[0m\n"; else make install -j $JOBSNUM; fi
+    - make clean
+    - ccache -s
+    - cd ../build
+    - if [[ ${TESTS_AFTER_MAKE} == "TESTS_AFTER_MAKE" ]] ; then xvfb-run -s "-screen 0 1600x1200x24" make doc; fi
+    - cd ..
+    - if [[ ${TESTS_AFTER_MAKE} == "TESTS_AFTER_MAKE" ]] ; then install/bin/yade-ci --test ; fi
+    - if [[ ${TESTS_AFTER_MAKE} == "TESTS_AFTER_MAKE" ]] ; then install/bin/yade-ci --checkall; fi
+    - if [[ ${TESTS_AFTER_MAKE} == "TESTS_AFTER_MAKE" ]] ; then install/bin/yade-ci -j5 --checkall; fi
+    - if [[ ${TESTS_AFTER_MAKE} == "TESTS_AFTER_MAKE" ]] ; then xvfb-run -a -s "-screen 0 1600x1200x16" scripts/checks-and-tests/gui/testGui.sh; fi
+    - if [[ ${TESTS_AFTER_MAKE} == "TESTS_AFTER_MAKE" ]] ; then install/bin/yade-ci --quickperformance -j8; fi
+    - cat /etc/os-release
+    - /usr/bin/dpkg --print-architecture
+  tags:
+    - fast
+
+.artifacts_template: &artifacts_definition
+  artifacts:
+    when: always
+    paths:
+      - install
+    expire_in: 2 weeks
+
+# 2.1 build stage: ubuntu 16.04
+make_16_04:
+  <<: *make_definition
+  <<: *artifacts_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu16.04
+
+make_18_04:
+  <<: *make_definition
+  artifacts:
+    paths:
+      - install
+      - build
+    expire_in: 2 weeks
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04
+
+make_20_04:
+  <<: *make_definition
+  <<: *artifacts_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu20.04
+
+make_stretch:
+  <<: *make_definition
+  <<: *artifacts_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-stretch
+
+make_buster:
+  <<: *make_definition
+  <<: *artifacts_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-buster
+
+make_bullseye:
+  <<: *make_definition
+  <<: *artifacts_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+make_32bit_bullseye:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-32bit-bullseye
+
+make_no_mpi:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DENABLE_MPI=OFF $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+make_no_vtk:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DENABLE_VTK=OFF $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+make_debug:
+  <<: *make_definition
+  artifacts:
+    when: always
+    paths:
+      - screenshots
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else export TESTS_AFTER_MAKE="TESTS_AFTER_MAKE"; fi
+    - export EXTRA_CMAKE_ARGS="-DDEBUG=ON $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+    - export CXXFLAGS="-O2 $CXXFLAGS"
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+make_asan:
+  <<: *make_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else export TESTS_AFTER_MAKE="TESTS_AFTER_MAKE"; fi
+    - export EXTRA_CMAKE_ARGS="-DENABLE_USEFUL_ERRORS=0 -DENABLE_ASAN=1 $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+    - export ASAN_OPTIONS=detect_leaks=0:log_path=stdout:verify_asan_link_order=false
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  tags:
+    - debug
+  artifacts:
+    when: always
+    paths:
+      - screenshots
+
+make_asan_HP:
+  <<: *make_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else export TESTS_AFTER_MAKE="TESTS_AFTER_MAKE"; fi
+    # it is expensive to run 5 ASAN tests. So instead run only one, but pick from available decimal places based on the job id.
+    - export TEST_DECIMAL_PLACES=$(case $(( $CI_BUILD_ID % 5 )) in
+        "0") echo "18"  ;;
+        "1") echo "33"  ;;
+        "2") echo "45"  ;;
+        "3") echo "150" ;;
+        "4") echo "45"  ;;
+        *)   echo "6"   ;;
+      esac)
+    - export TEST_USE_MPFR=$(case $(( $CI_BUILD_ID % 5 )) in
+        "0") echo "OFF" ;;
+        "1") echo "OFF" ;;
+        "2") echo "ON"  ;;
+        "3") echo "ON"  ;;
+        "4") echo "OFF" ;;
+        *)   echo "OFF" ;;
+        esac)
+    - echo "TEST_DECIMAL_PLACES="$TEST_DECIMAL_PLACES
+    - echo "TEST_USE_MPFR="$TEST_USE_MPFR
+    - export EXTRA_CMAKE_ARGS="-DENABLE_USEFUL_ERRORS=0 -DENABLE_ASAN=1 -DREAL_DECIMAL_PLACES=$TEST_DECIMAL_PLACES -DENABLE_MPFR=$TEST_USE_MPFR $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+    - export ASAN_OPTIONS=detect_leaks=0:log_path=stdout:verify_asan_link_order=false
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  tags:
+    - debug
+  artifacts:
+    when: always
+    paths:
+      - screenshots
+  timeout: 6 hours
+
+make_minimal:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DENABLE_VTK=OFF -DENABLE_MPI=OFF -DENABLE_GUI=OFF -DENABLE_GTS=OFF -DENABLE_TWOPHASEFLOW=OFF -DENABLE_CGAL=OFF -DENABLE_FEMLIKE=OFF -DENABLE_LBMFLOW=OFF -DENABLE_POTENTIAL_BLOCKS=OFF -DENABLE_POTENTIAL_PARTICLES=OFF -DENABLE_GL2PS=OFF -DENABLE_LOGGER=OFF -DENABLE_OPENMP=OFF $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+# _opposite means that all non-minimal options (options that do not reduce significantly amount of compiled code) are set to the setting opposite to the default one
+make_opposite:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DENABLE_LOGGER=OFF -DENABLE_MASK_ARBITRARY=ON -DENABLE_OPENMP=OFF -DENABLE_LIQMIGRATION=ON -DENABLE_PROFILING=ON -DENABLE_SPH=ON -DENABLE_DEFORM=ON $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+make_suse15:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    - export CXXFLAGS="-Wno-int-in-bool-context -Wno-comment $CXXFLAGS"
+    - echo $CXXFLAGS
+  image: registry.gitlab.com/yade-dev/docker-yade:suse15
+
+make_18_04_nogui:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    - export EXTRA_CMAKE_ARGS="-DENABLE_GUI=OFF $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04_nogui
+
+make_clang:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    - export CC="/usr/bin/clang-9"
+    - export CXX="/usr/bin/clang++-9"
+    # We should escape disabling features for the clang-build. Clang should work exactly like gcc.
+    - export EXTRA_CMAKE_ARGS="-DENABLE_USEFUL_ERRORS=0 $EXTRA_CMAKE_ARGS"
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+## High precision - testing debian bullseye
+
+mkHP_long_double:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    - export EXTRA_CMAKE_ARGS="-DREAL_DECIMAL_PLACES=18 $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+mkHP_float128:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DREAL_DECIMAL_PLACES=33 $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+mkHP_mpfr150:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DREAL_DECIMAL_PLACES=150 -DENABLE_MPFR=ON $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+mkHP_bf45:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DREAL_DECIMAL_PLACES=45 -DENABLE_MPFR=OFF $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+## High precision - all tests done.
+
+make_SSE:
+  <<: *make_definition
+  <<: *artifacts_definition
+  before_script:
+    # there can be only one before_script:, so the line below cannot be in a separate template
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export EXTRA_CMAKE_ARGS="-DVECTORIZE=ON $EXTRA_CMAKE_ARGS"
+    - echo $EXTRA_CMAKE_ARGS
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+
+# 3.1. test stage
+.test_template: &test_definition
+  <<: *platforms_definition
+  <<: *gitlab_runner_retry_definition
+  stage: test
+  script:
+    - export PYTHONUNBUFFERED=1
+    - if [[ ${SKIP_TEST} == "SKIP_TEST" ]] ; then echo -e "\n\e[93m===\nSkipping this test, because it's a WIP merge request.\n===\e[0m\n"; else install/bin/yade-ci --test; fi
+    - if [[ ${SKIP_TEST} == "SKIP_TEST" ]] || [[ ${NO_GUI} == "NO_GUI" ]] ; then echo -e "\n\e[93m===\nSkipping GUI test.\n===\e[0m\n"; else xvfb-run -a -s "-screen 0 1600x1200x16" scripts/checks-and-tests/gui/testGui.sh; fi
+    - if [[ ${SKIP_TEST} == "SKIP_TEST" ]] ; then echo -e "\n\e[93m===\nSkipping --quickperformance -j8 test, because it's a WIP merge request.\n===\e[0m\n"; else install/bin/yade-ci --quickperformance -j8; fi
+    - cat /etc/os-release
+    - /usr/bin/dpkg --print-architecture
+  timeout: 25 minutes
+  artifacts:
+    when: always
+    paths:
+      - screenshots
+
+.skip_wip_test_template: &skip_wip_test_definition
+  before_script:
+    # there can be only one before_script: it is in a template here. Buy if you need a before_script: for something else (e.g. MPI), this line has to
+    # be copied into 'before_script:' there, and the template removed
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+
+.skip_wip_test_template_nogui: &skip_wip_test_definition_nogui
+  before_script:
+    - if [[ ${CI_MERGE_REQUEST_TITLE:0:4} == "WIP:" ]] ; then export SKIP_TEST="SKIP_TEST"; else echo "non-WIP merge request detected"; fi
+    - export NO_GUI="NO_GUI"
+
+test_16_04:
+  <<: *test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu16.04
+  dependencies:
+    - make_16_04
+  needs: ["make_16_04"]
+
+test_18_04:
+  <<: *test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04
+  dependencies:
+    - make_18_04
+  needs: ["make_18_04"]
+
+test_20_04:
+  <<: *test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu20.04
+  dependencies:
+    - make_20_04
+  needs: ["make_20_04"]
+
+test_stretch:
+  <<: *test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-stretch
+  dependencies:
+    - make_stretch
+  needs: ["make_stretch"]
+
+test_buster:
+  <<: *test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-buster
+  dependencies:
+    - make_buster
+  needs: ["make_buster"]
+
+test_bullseye:
+  <<: *test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_bullseye
+  needs: ["make_bullseye"]
+
+test_32bit_bullseye:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-32bit-bullseye
+  dependencies:
+    - make_32bit_bullseye
+  needs: ["make_32bit_bullseye"]
+
+test_no_mpi:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_no_mpi
+  needs: ["make_no_mpi"]
+
+test_no_vtk:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_no_vtk
+  needs: ["make_no_vtk"]
+
+test_minimal:
+  <<: *test_definition
+  <<: *skip_wip_test_definition_nogui
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_minimal
+  needs: ["make_minimal"]
+
+test_opposite:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_opposite
+  needs: ["make_opposite"]
+
+test_suse15:
+  <<: *test_definition
+  before_script:
+    - export NO_GUI="NO_GUI"
+  image: registry.gitlab.com/yade-dev/docker-yade:suse15
+  dependencies:
+    - make_suse15
+  needs: ["make_suse15"]
+
+test_18_foam:
+  <<: *platforms_definition
+  <<: *gitlab_runner_retry_definition
+  stage: test
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04_foam
+  dependencies:
+    - make_18_04
+  needs: ["make_18_04"]
+  timeout: 25 minutes
+  script:
+    - export PYTHONUNBUFFERED=1
+    - cat /etc/os-release
+    - export OMPI_MCA_btl_vader_single_copy_mechanism=none
+    - pwd
+    - scripts/checks-and-tests/testOpenFoam.sh
+
+test_18_04_nogui:
+  <<: *test_definition
+  before_script:
+    - export NO_GUI="NO_GUI"
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04_nogui
+  dependencies:
+    - make_18_04_nogui
+  needs: ["make_18_04_nogui"]
+
+test_clang:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_clang
+  needs: ["make_clang"]
+
+## High precision - testing debian bullseye
+
+tstHP_long_double:
+  <<: *test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_long_double
+  needs: ["mkHP_long_double"]
+  timeout: 4 hours
+
+tstHP_float128:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_float128
+  needs: ["mkHP_float128"]
+  timeout: 4 hours
+
+tstHP_mpfr150:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_mpfr150
+  needs: ["mkHP_mpfr150"]
+  timeout: 4 hours
+
+tstHP_bf45:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_bf45
+  needs: ["mkHP_bf45"]
+  timeout: 4 hours
+
+## High precision - all tests done.
+
+test_SSE:
+  <<: *test_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_SSE
+  needs: ["make_SSE"]
+
+# 3.2. check stage
+.check_template: &check_definition
+  <<: *platforms_definition
+  <<: *gitlab_runner_retry_definition
+  stage: test
+#  before_script:
+#    - export OMPI_MCA_rmaps_base_oversubscribe=1
+#    - export OMPI_MCA_btl_vader_single_copy_mechanism=none
+#    - export OMPI_MCA_mpi_yield_when_idle=1 #degraded mode when oversubscribing (https://www.open-mpi.org/faq/?category=running#oversubscribing)
+  script:
+    - export PYTHONUNBUFFERED=1
+    - echo -e "\n===\n\e[44mSingle core check yade --checkall\e[0m\n===\n"
+    - if [[ ${SKIP_TEST} == "SKIP_TEST" ]] ; then echo -e "\n\e[93m===\nSkipping this check, because it's a WIP merge request.\n===\e[0m\n"; else install/bin/yade-ci --checkall; fi
+    - echo -e "\n===\n\e[44mParallel check yade -j5 --checkall\e[0m\n===\n"
+    - if [[ ${SKIP_TEST} == "SKIP_TEST" ]] ; then echo -e "\n\e[93m===\nSkipping this check, because it's a WIP merge request.\n===\e[0m\n"; else install/bin/yade-ci -j5 --checkall; fi
+    - cat /etc/os-release
+    - /usr/bin/dpkg --print-architecture
+  timeout: 25 minutes
+
+check_16_04:
+  <<: *check_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu16.04
+  dependencies:
+    - make_16_04
+  needs: ["make_16_04"]
+
+check_18_04:
+  <<: *check_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04
+  dependencies:
+    - make_18_04
+  needs: ["make_18_04"]
+
+check_20_04:
+  <<: *check_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu20.04
+  dependencies:
+    - make_20_04
+  needs: ["make_20_04"]
+
+check_stretch:
+  <<: *check_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-stretch
+  dependencies:
+    - make_stretch
+  needs: ["make_stretch"]
+
+check_buster:
+  <<: *check_definition
+  before_script:
+    - export OMPI_MCA_rmaps_base_oversubscribe=1
+    - export OMPI_MCA_btl_vader_single_copy_mechanism=none
+    - export OMPI_MCA_mpi_yield_when_idle=1 #degraded mode when oversubscribing (https://www.open-mpi.org
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-buster
+  dependencies:
+    - make_buster
+  needs: ["make_buster"]
+
+check_bullseye:
+  <<: *check_definition
+  before_script:
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_bullseye
+  needs: ["make_bullseye"]
+
+check_32bit_bullseye:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-32bit-bullseye
+  dependencies:
+    - make_32bit_bullseye
+  needs: ["make_32bit_bullseye"]
+
+check_no_mpi:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_no_mpi
+  needs: ["make_no_mpi"]
+
+check_no_vtk:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_no_vtk
+  needs: ["make_no_vtk"]
+
+check_minimal:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_minimal
+  needs: ["make_minimal"]
+
+check_opposite:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_opposite
+  needs: ["make_opposite"]
+
+check_suse15:
+  <<: *check_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:suse15
+  dependencies:
+    - make_suse15
+  needs: ["make_suse15"]
+
+check_clang:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_clang
+  needs: ["make_clang"]
+
+## High precision - testing debian bullseye
+
+ckHP_long_double:
+  <<: *check_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_long_double
+  needs: ["mkHP_long_double"]
+  timeout: 4 hours
+
+ckHP_float128:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_float128
+  needs: ["mkHP_float128"]
+  timeout: 4 hours
+
+ckHP_mpfr150:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_mpfr150
+  needs: ["mkHP_mpfr150"]
+  timeout: 4 hours
+
+ckHP_bf45:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - mkHP_bf45
+  needs: ["mkHP_bf45"]
+  timeout: 8 hours
+
+## High precision - all tests done.
+
+check_SSE:
+  <<: *check_definition
+  <<: *skip_wip_test_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  dependencies:
+    - make_SSE
+  needs: ["make_SSE"]
+
+.doc_template: &doc_definition
+  <<: *platforms_definition
+  script:
+    - export PYTHONUNBUFFERED=1
+    - cd build
+    - if [[ ${SKIP_TEST} == "SKIP_TEST" ]] ; then echo -e "\n\e[93m===\nSkipping DOC, because it's a WIP merge request.\n===\e[0m\n"; else xvfb-run -s "-screen 0 1600x1200x24" make doc; fi
+  stage: test
+  timeout: 45 minutes
+  artifacts:
+    paths:
+      - install
+
+# 4. doc stage
+doc_18_04:
+  <<: *doc_definition
+  <<: *gitlab_runner_retry_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04
+  dependencies:
+    - make_18_04
+  needs: ["make_18_04"]
+
+
+# 5. pages stage; uploads documentation to the website
+pages:
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04
+  stage: pages
+  <<: *gitlab_runner_retry_definition
+  only:
+    - master
+  script:
+    - mv install/share/doc/yade-ci/html public
+    - mv install/share/doc/yade-ci/Yade.pdf public
+    - mv install/share/doc/yade-ci/Yade.epub public
+  dependencies:
+    - doc_18_04
+  needs: ["doc_18_04"]
+  artifacts:
+    paths:
+      - public
+
+# 6. build debian packages
+.deb_template: &deb_definition
+  stage: deb
+  <<: *gitlab_runner_retry_definition
+  only:
+    - master
+  script:
+    - export PYTHONUNBUFFERED=1
+    - cd $CI_PROJECT_DIR/deb/yadedaily
+    # see comments in make_template, but here give smaller JOBSNUM because this runs on master only, so the cores can be better utilized on merge_request
+    - export JOBSNUM=$(case $CI_RUNNER_DESCRIPTION in
+        "y4pak") echo "11" ;;
+        "c4pak") echo "11" ;;
+        "y6pak") echo "12" ;;
+        "c6pak") echo "12" ;;
+        "y7pak") echo "10" ;;
+        "c7pak") echo "10" ;;
+        "y8pak") echo "5" ;;
+        "c8pak") echo "5" ;;
+        "y9pak") echo "5" ;;
+        "c9pak") echo "5" ;;
+        "yade-runner") echo "12" ;;
+        "yade-runner-01") echo "1" ;;
+        *) echo "8";;
+        esac)
+    - echo $JOBSNUM
+    - export CCACHE_DIR=/root/.ccache
+    - ccache -s
+    - DEB_BUILD_OPTIONS=noddebs dpkg-buildpackage -j$JOBSNUM
+    - rm -rf $CI_PROJECT_DIR/deb/yadedaily
+    - ls -l $CI_PROJECT_DIR/deb
+    - ccache -s
+  dependencies: []
+  # this line is to trigger deb building earlier; the "make_minimal" is supposed to finish fastest of all builds.
+  needs: ["make_minimal"]
+  artifacts:
+    paths:
+      - ./deb
+    expire_in: 5 day
+  tags:
+    - fast
+
+deb_bullseye:
+  <<: *deb_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-bullseye
+  before_script:
+    - rm -rf ./deb
+    - ./scripts/ppa_ci/builddeb.py -d "bullseye"
+
+deb_buster:
+  <<: *deb_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-buster
+  before_script:
+    - rm -rf ./deb
+    - ./scripts/ppa_ci/builddeb.py -d "buster"
+
+deb_stretch:
+  <<: *deb_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:debian-stretch
+  before_script:
+    - rm -rf ./deb
+    - ./scripts/ppa_ci/builddeb.py -d "stretch"
+
+deb_xenial:
+  <<: *deb_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu16.04
+  before_script:
+    - rm -rf ./deb
+    - ./scripts/ppa_ci/builddeb.py -d "xenial"
+
+deb_bionic:
+  <<: *deb_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu18.04
+  before_script:
+    - rm -rf ./deb
+    - ./scripts/ppa_ci/builddeb.py -d "bionic"
+
+deb_focal:
+  <<: *deb_definition
+  image: registry.gitlab.com/yade-dev/docker-yade:ubuntu20.04
+  before_script:
+    - rm -rf ./deb
+    - ./scripts/ppa_ci/builddeb.py -d "focal"
+

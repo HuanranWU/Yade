@@ -1,0 +1,56 @@
+BasedOnStyle: WebKit
+AccessModifierOffset: -8
+AlignAfterOpenBracket: AlwaysBreak
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignTrailingComments: true
+#wait till clang supports it
+# AllowAllArgumentsOnNextLine: true
+# AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackArguments: false
+BinPackParameters: false
+# BreakBeforeBraces: Stroustrup
+# not working on xenial & stretch
+# BreakConstructorInitializers: BeforeComma
+ColumnLimit: 160
+ConstructorInitializerIndentWidth: 8
+ContinuationIndentWidth: 8
+# not working on xenial & stretch
+# IncludeBlocks: Merge
+# make sure that yade includes are in this order: lib, core, pkg, gui.
+# Then Eigen, Python. And others at the end. Urecognized go first.
+# wrap_python.hpp must always be the first one, see https://www.boost.org/doc/libs/1_71_0/libs/python/doc/html/building/include_issues.html
+IncludeCategories:
+  - Regex:           '^(<|")boost/python/detail/wrap_python.hpp(>|")'
+    Priority:        -10
+  - Regex:           '^<(Eigen|Python)'
+    Priority:        5
+  - Regex:           '^(<|")gui/'
+    Priority:        4
+  - Regex:           '^(<|")(core|pkg)/'
+    Priority:        3
+  - Regex:           '^(<|")lib/'
+    Priority:        2
+  - Regex:           '^<.*>'
+    Priority:        6
+  - Regex:           '.*'
+    Priority:        1
+IndentWidth: 8
+IndentCaseLabels: true
+# IndentPPDirectives: BeforeHash
+# not working on xenial & stretch
+# UseTab: ForContinuationAndIndentation
+UseTab: ForIndentation
+KeepEmptyLinesAtTheStartOfBlocks: false
+MacroBlockBegin: "glBegin|glNewList"
+MacroBlockEnd: "glEnd|glEndList"
+MaxEmptyLinesToKeep: 2
+# not working on xenial & stretch
+# SortUsingDeclarations: true
+# wait till clang supports it: https://reviews.llvm.org/D33029
+# DanglingParenthesis: true
+Cpp11BracedListStyle: false
+ReflowComments: false
+Language: Cpp

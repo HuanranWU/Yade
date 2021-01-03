@@ -1,0 +1,311 @@
+# encoding: utf-8
+"""
+The ``yade.libVersions`` module tracks versions of all libraries it was compiled with. Example usage is as follows::
+
+	from yade.libVersions import *
+	if(getVersion('cgal') > (4,9,0)):
+		…
+	else:
+		…
+
+To obtain a list of all libraries use the function :yref:`yade.libVersions.printAllVersions`.
+
+All libraries listed in :ref:`prerequisites<prerequisites>` are detected by this module.
+
+.. note:: If we need a version of some library not listed in :ref:`prerequisites<prerequisites>`, then it must also be added to :ysrc:`that list<doc/sphinx/installation.rst>`.
+
+When adding a new version please have a look at these three files: 
+
+1. :ysrc:`py/_libVersions.cpp`: detection of versions from ``#include`` files by C++.
+2. :ysrc:`py/libVersions.py.in`: python module which is constructed by cmake during compilation. All ``*.in`` files are processed by cmake.
+3. :ysrc:`cMake/FindMissingVersions.cmake`: forced detection of library with undetectable version.
+"""
+
+# all C++ functions are accessible now:
+from yade._libVersions import *
+import yade.config
+
+def getArchitecture():
+	"""
+	:return: string containing processor architecture name, as reported by ``uname -m`` call or from ``CMAKE_HOST_SYSTEM_PROCESSOR`` cmake variable.
+	"""
+	return '${ARCHITECTURE}'
+
+def getLinuxVersion():
+	"""
+	:return: string containing linux release and version, preferably the value of ``PRETTY_NAME`` from file ``/etc/os-release``.
+	"""
+	ret=""
+	try:
+		import os
+		listDir = os.listdir("/etc")
+		once = ("os-release" in listDir)
+		for f in listDir:
+			if((once and f=="os-release") or ((not once) and f.endswith("elease"))):
+				with open(os.path.join("/etc", f), 'r') as fin:
+					lines=""
+					for line in fin:
+						if(line.startswith("PRETTY_NAME")):
+							try:
+								ret=(line.split('"')[1])
+							except Exception as e:
+								ret=(line)
+							break
+						lines+=line
+					if(ret==""): ret=("\n"+lines)
+	except Exception as e:
+		print("Error: cannot find file /etc/os-release. Caught exception:",e)
+	if(ret==""): ret="Unknown"
+	return ret
+
+
+def getVersion(libName):
+	"""
+	This function returns the tuple ``(major, minor, patchlevel)`` with library version number. The ``yade --test`` in file :ysrc:`py/tests/libVersions.py` tests that this
+	version is the same as detected by cmake and C++. If only one of those could detect the library version, then this number is used.
+
+	:param string libName: the name of the library
+
+	:return: tuple in format ``(major, minor, patchlevel)`` if ``libName`` exists. Otherwise it returns ``None``.
+
+	.. note:: library openblas has no properly defined version in header files, this function will return ``(0,0,0)`` for openblas. Parsing the version string would be unreliable. The mpi version detected by cmake sometimes is different than version detected by C++, this needs further investigation.
+	"""
+	cppVer   = getAllVersionsCpp()
+	cmakeVer = getAllVersionsCmake()
+	if(libName == 'openblas'):
+		print("Warning: openblas has no properly defined version in header files, the obtained version is ",cppVer[libName])
+	if((libName == 'mpi' ) and (cppVer[libName][0] != cmakeVer[libName][0])):
+		print('\033[91m'+" Warning: mpi versions are different. Can you help with file py/libVersions.py.in?"+'\033[0m')
+		print("C++ is: " , cppVer[libName], " and cmake is: ",cmakeVer[libName], ", will return the C++ one.")
+	if((libName in cppVer) and (len(cppVer[libName])==2)):
+		return cppVer[libName][0]
+	if((libName in cmakeVer) and (len(cmakeVer[libName])==2)):
+		return cmakeVer[libName][0]
+	#raise RuntimeError("Could not find library version of ",libName)
+	return None
+
+def getAllVersionsCmake():
+	"""
+	This function returns library versions as provided by cmake during compilation.
+
+	:return: dictionary in following format: ``{ "libName" : [ (major, minor, patchlevel) , "versionString" ] }``
+
+
+	As an example the dict below reflects what libraries this documentation was compiled with (here are only those detected by `CMAKE <https://cmake.org>`_):
+
+	.. ipython::
+	
+	   In [1]: from yade.libVersions import *
+
+	   In [1]: getAllVersionsCmake()
+
+	.. note:: Please add here detection of other libraries when yade starts using them or if you discover how to extract from cmake a version which I didn't add here.
+
+	"""
+
+	ret={}
+	def addVer(name,v1,v2,v3,ver):
+		try:
+			ret.update({ name : [ ( int(v1) , int(v2) , int(v3) ) , ver ]})
+		except:
+			pass
+	# 0.cmake
+	addVer("cmake",'${CMAKE_MAJOR_VERSION}','${CMAKE_MINOR_VERSION}','${CMAKE_PATCH_VERSION}','${CMAKE_VERSION}')
+	# 1. compiler
+	try:
+		addVer('compiler'  ,'${CMAKE_CXX_COMPILER_VERSION}'.split('.')[0],'${CMAKE_CXX_COMPILER_VERSION}'.split('.')[1],'${CMAKE_CXX_COMPILER_VERSION}'.split('.')[2],'${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_VERSION}')
+	except:
+		pass
+	addVer("clang",'${CLANG_VERSION_MAJOR}','${CLANG_VERSION_MINOR}','${CLANG_VERSION_PATCHLEVEL}','${CLANG_VERSION}')
+	# 2. boost
+	addVer("boost",'${Boost_MAJOR_VERSION}','${Boost_MINOR_VERSION}','${Boost_SUBMINOR_VERSION}','${Boost_VERSION}')
+	# 3. qt
+	addVer("qt"   ,'${Used_QT_VERSION_MAJOR}','${Used_QT_VERSION_MINOR}','${Used_QT_VERSION_PATCH}','${Used_QT_VERSION_MAJOR}.${Used_QT_VERSION_MINOR}.${Used_QT_VERSION_PATCH}')
+	# 4. freeglut
+	addVer("freeglut" ,'${FREEGLUT_VERSION_MAJOR}','${FREEGLUT_VERSION_MINOR}','${FREEGLUT_VERSION_PATCH}','${FREEGLUT_VERSION_STR}')
+	# 5. qglviewer  - I don't know how to detect it
+	# 6. python
+	addVer("python",'${PYTHON_VERSION_MAJOR}','${PYTHON_VERSION_MINOR}','${PYTHON_VERSION_PATCH}','${PYTHON_VERSION_STRING}')
+	# 7. matplotlib - I don't know how to detect it
+	# 8. eigen
+	addVer("eigen" ,'${EIGEN3_WORLD_VERSION}','${EIGEN3_MAJOR_VERSION}','${EIGEN3_MINOR_VERSION}','${EIGEN3_VERSION}')
+	# 9. gdb        - I don't know how to detect it
+	# 10. sqlite3   - I don't know how to detect it
+	# 11. loki      - I don't know how to detect it
+	# 12. vtk
+	addVer("vtk"   ,'${VTK_MAJOR_VERSION}','${VTK_MINOR_VERSION}','${VTK_BUILD_VERSION}','${VTK_VERSION}')
+	# 13. cgal
+	addVer("cgal"  ,'${CGAL_MAJOR_VERSION}','${CGAL_MINOR_VERSION}','${CGAL_BUGFIX_VERSION}','${CGAL_VERSION}')
+	# 14. suitesparse
+	addVer("suitesparse",'${SUITESPARSE_MAIN_VERSION}','${SUITESPARSE_SUB_VERSION}','${SUITESPARSE_SUBSUB_VERSION}','${SUITESPARSE_VERSION}')
+	# 15. openblas  - I don't know how to detect it
+	# 16. metis     - I don't know how to detect it
+	# 17. mpi       - This one is based on https://cmake.org/cmake/help/v3.10/module/FindMPI.html
+	addVer("mpi"   ,'${MPI_CXX_VERSION_MAJOR}','${MPI_CXX_VERSION_MINOR}','0', '${MPI_CXX_VERSION}')
+	# 18. numpy
+	addVer("numpy" ,'${NUMPY_VERSION_MAJOR}','${NUMPY_VERSION_MINOR}','${NUMPY_VERSION_PATCH}', '${NUMPY_VERSION}')
+	# Note: these below are getting the version currently installed, not the one with which yade was compiled. Maybe this will need to be changed.
+	# 19. ipython
+	try:
+		import IPython
+		ipver=IPython.__version__
+		ipvertab=IPython.__version__.split('.')
+		addVer("ipython", ipvertab[0] , ipvertab[1] , ipvertab[2] , ipver )
+	except:
+		pass
+	# 20. sphinx, https://www.sphinx-doc.org/en/master/extdev/appapi.html#checking-the-sphinx-version
+	try:
+		import sphinx
+		spver=sphinx.version_info
+		addVer("sphinx", spver[0] , spver[1] , spver[2] , '%i.%i.%i-%s-%i'%spver )
+	except:
+		pass
+	# 21. clp
+	# Note: this can be fixed in the same way as forced detection of freeglut, with file cMake/FindMissingVersions.cmake
+	addVer("clp",'${CLP_WORLD_VERSION}','${CLP_MAJOR_VERSION}','${CLP_MINOR_VERSION}','${CLP_VERSION}')
+	addVer("coinutils",'${COINUTILS_WORLD_VERSION}','${COINUTILS_MAJOR_VERSION}','${COINUTILS_MINOR_VERSION}','${COINUTILS_VERSION}')
+	# 22. PyMPI
+	try:
+		import mpi4py
+		mpi4ver=mpi4py.__version__
+		mpi4vertab=mpi4py.__version__.split('.')
+		addVer("mpi4py", mpi4vertab[0] , mpi4vertab[1] , mpi4vertab[2] , mpi4ver )
+	except:
+		pass
+	# 23. MPFR
+	addVer("mpfr",'${MPFR_MAJOR_VERSION}','${MPFR_MINOR_VERSION}','${MPFR_PATCHLEVEL_VERSION}','${MPFR_VERSION}')
+	# 24. mpmath
+	# a simple check of mpmath is a following python command:
+	# import mpmath ; mpmath.mp.dps=50 ; mpmath.acos(0)
+	try:
+		addVer("mpmath",'${MPMATH_VERSION}'.split('.')[0],'${MPMATH_VERSION}'.split('.')[1],'${MPMATH_VERSION}'.split('.')[2],'${MPMATH_VERSION}')
+	except:
+		pass
+
+	return ret
+
+def printAllVersions(rstFormat=False):
+	"""
+	This function prints a nicely formatted table with library versions.
+
+	:param bool rstFormat: whether to print table using the reStructuredText formatting. Defaults to ``False`` and prints using `Gitlab markdown rules <https://gitlab.com/help/user/markdown>`_ so that it is easy to paste into gitlab discussions.
+
+	As an example the table below actually reflects with what libraries this documentation was compiled:
+
+	.. ipython::
+	
+	   In [1]: printAllVersions()
+
+	.. note:: For convenience at startup ``from yade.libVersions import printAllVersions`` is executed, so that this function is readily accessible.
+
+	"""
+
+	# there will be three columns: library , cmake , C++
+	headers  = ["library","cmake","C++"]
+	longest  = [None,None,None]
+	cmakeVer = getAllVersionsCmake()
+	cppVer   = getAllVersionsCpp()
+	namesSet = set()
+	for i in range(3): longest[i] = len(headers[i])
+	for key,val in cmakeVer.items():
+		longest[0] = max(longest[0],len(key))
+		if(len(val)==2):
+			namesSet.add(key)
+			longest[1] = max(longest[1],len(val[1]))
+	for key,val in cppVer.items():
+		longest[0] = max(longest[0],len(key))
+		if(len(val)==2):
+			namesSet.add(key)
+			longest[2] = max(longest[2],len(val[1]))
+
+	for i in range(3): longest[i]+=2
+
+	sep = '| '+'-'*longest[0]+' | '+'-'*longest[1]+' | '+'-'*longest[2]+' |\n'
+	lines="|"
+	if(rstFormat):
+		sep = '+-'+'-'*longest[0]+'-+-'+'-'*longest[1]+'-+-'+'-'*longest[2]+'-+'
+		lines = sep+'\n|'
+	# nice python formatting guide: https://pyformat.info/
+	for i in range(3):
+		lines +=" "+(('{:'+str(longest[i])+'}').format(headers[i]))+" |"
+	lines+='\n'
+	if(rstFormat):
+		lines += sep.replace('-','=')+'\n'
+	else:
+		lines += sep
+	for libName in sorted(namesSet):
+		lines+="| "+(('{:'+str(longest[0])+'}').format(libName))+" |"
+		if (libName in cmakeVer) and (len(cmakeVer[libName])==2):
+			lines+=" "+(('{:'+str(longest[1])+'}').format(cmakeVer[libName][1]))+" |"
+		else:
+			lines+=" "+(('{:'+str(longest[1])+'}').format(' '                 ))+" |"
+		if (libName in cppVer) and (len(cppVer[libName])==2):
+			lines+=" "+(('{:'+str(longest[2])+'}').format(cppVer[libName][1]  ))+" |"
+		else:
+			lines+=" "+(('{:'+str(longest[2])+'}').format(' '                 ))+" |"
+		lines+='\n'
+		if(rstFormat):
+			lines+= sep+'\n'
+
+	if(rstFormat==False): print("\n```")
+	#print("Yade revision  : ",yade.config.revision)
+	print("Yade version   : ",yade.config.version)
+	#print("Yade prefix    : ",yade.config.prefix)
+	#print("Yade suffix    : ",yade.config.suffix)
+	feats = ""
+	for f in yade.config.features: feats+=" "+f
+	print("Yade features  :",feats)
+	# print yade config dir relative to ${HOME}
+	confD = yade.config.confDir
+	try:
+		import os
+		confD = "~/"+os.path.relpath(yade.config.confDir,os.environ['HOME'])
+	except Exception as e:
+		pass
+	print("Yade config dir: ",confD)
+	print("Yade precision :  "+str(yade.math.getDigits2(1))+" bits, "+str(yade.math.getDigits10(1))+" decimal places, with"+("" if yade.config.highPrecisionMpmath else "out")+" mpmath")
+	if('RealHP' in yade.config.features):
+		print("Yade RealHP<…> :  "+str(yade.math.getRealHPCppDigits10())+" decimal digits in C++, "+str(yade.math.getRealHPPythonDigits10())+" decimal digits accessible from python")
+	if(rstFormat==False): print("```")
+	print("\nLibraries used :\n")
+	print(lines)
+	print("Linux version  :  "+str(getLinuxVersion()))
+	print("Architecture   :  "+str(getArchitecture()))
+	try:
+		print("Little endian  :  "+str(yade.math.isThisSystemLittleEndian()))
+	except Exception as e:
+		print("Little endian  :  unknown")
+	print("")
+
+def getAllVersions(rstFormat=False):
+	"""
+	:return: ``str`` - this function returns the result of :yref:`printAllVersions(rstFormat)<yade.libVersions.printAllVersions>` call inside a string variable.
+	"""
+	import sys,io
+	origStdOut = sys.stdout
+	newStdOut  = io.StringIO()
+	sys.stdout = newStdOut
+	printAllVersions(rstFormat)
+	sys.stdout = origStdOut
+	return newStdOut.getvalue()
+
+"""
+GITLAB format:
+
+| header 1 | header 2 |
+| -------- | -------- |
+| cell 1   | cell 2   |
+| cell 3   | cell 4   |
+
+
+reStructuredText format:
+
++----------+----------+
+| header 1 | header 2 |
++==========+==========+
+| cell 1   | cell 2   |
++----------+----------+
+| cell 3   | cell 4   |
++----------+----------+
+"""
+

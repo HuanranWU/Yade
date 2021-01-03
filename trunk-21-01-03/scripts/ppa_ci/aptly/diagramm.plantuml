@@ -1,0 +1,19 @@
+@startuml
+Actor Developer
+participant Gitlab
+participant Laptop
+database "AWS_S3"
+
+Developer -> Gitlab: commit
+Developer -> Gitlab: Merge Request
+Gitlab -> Gitlab: Merge in Master
+Gitlab -> Gitlab: Build DEB-packages
+...
+group deploy
+   Laptop -> Gitlab: Get DEB-packages
+   Gitlab -> Laptop: DEB-packages
+   Laptop -> Laptop: Prepare Repository
+   Laptop -> Laptop: Sign Repository
+   Laptop -> AWS_S3: Upload Repository
+end
+@enduml

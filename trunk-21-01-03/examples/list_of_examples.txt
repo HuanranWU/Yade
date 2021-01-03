@@ -1,0 +1,302 @@
+# Status of all examples: 2019-04-28
+# Notation: 'OK' - runs and does not produce obvious errors, 'ok' - acceptable, 'OK?' - works but looks suspicious, 'ok?' - even worse, 'x' - very bad/missing/not working
+# the list below was created with command: tree -P "*.py" > list_of_examples.txt ; tree -P "*.py" ../doc/sphinx/tutorial >> list_of_examples.txt
+
+works on python3 ? 
+   │works on python2 in commit cc928934f ? 
+   │   │explained inside what it is demonstrating ?
+   │   │   │has video uploaded to website documentation ?
+   │   │   │   │
+   │   │   │   │
+OK │OK │ok │no ├── 2D-Tori.py
+OK │OK │x  │no ├── PIDController.py
+x  │x  │x  │x  ├── ResetRandomPosition.py                 [with T = IGeomFunctor; typename boost::detail::sp_member_access<T>::type = IGeomFunctor*]: Assertion `px != 0' failed. SIGSEGV/SIGABRT handler called; gdb; Dispatching.cpp:85 null pointer, I guess that the problem is again with I->functorCache.geom
+OK │OK │OK │no ├── ViscElMatchMaker.py
+OK │OK │OK │no ├── billiard.py
+OK │OK │x  │no ├── bouncingbubble.py                      Note: whoa, a Law2_ScGeom_BubblePhys_Bubble is used here. Never saw this one ;)
+OK │OK │OK │no ├── funnel.py
+.. │.. │ok │x  ├── hdaps.py                               can't tell if it works, I don't have /sys/devices/platform/hdaps/ interface
+OK │OK │OK │no ├── mill.py
+OK │ok │x  │no ├── rotationalResistance.py
+OK │OK │OK │no ├── spheresFactory.py
+OK │OK │ok │no ├── timeStepperUsage.py                    (a bit slow, but ok)
+OK │OK │ok │no ├── tunnel-pack.py                         (a bit slow, but ok)
+   │   │   │   │
+   │   │   │   │
+   │   │   │   ├── DeformEngine
+x  │x  │ok │x  │   ├── LOedometricDeform.py               NameError: name 'DeformControl' is not defined
+x  │x  │ok?│x  │   └── OedometricDeform.py                NameError: name 'DeformControl' is not defined
+   │   │   │   ├── FEMxDEM
+?  │ok?│x  │zzz│   ├── biaxialSmooth.py
+?  │x  │x  │x  │   ├── footing.py                         ImportError: No module named msFEM; it's a mistake in the script. There is no such module. It should be one of those: msFEM2D.py, msFEM3D.py, msFEMup.py
+OK │OK │x  │zzz│   ├── prepareRVE.py
+?  │ok?│x  │zzz│   ├── retainingSmooth.py
+?  │x  │x  │x  │   ├── triaxialRough.py                   --> Returned value -2 instead of OPAL_SUCCESS, ompi_mpi_init: opal_init_util failed, Local abort before MPI_INIT completed completed successfully.
+?  │x  │x  │x  │   └── undrain.py                         --> Returned value -2 instead of OPAL_SUCCESS, ompi_mpi_init: opal_init_util failed, Local abort before MPI_INIT completed completed successfully.
+   │   │   │   ├── FluidCouplingLBM
+OK │OK │OK │YES│   └── buoyancy.py                        https://youtu.be/bohwFU328NA
+   │   │   │   ├── FluidCouplingPFV
+OK │OK?│OK │zzz│   ├── drainage-2PFV-Yuan_and_Chareyre_2017.py  note: no visuals, I guess I would have to wait longer to see anything
+OK │OK │OK │YES│   └── oedometer.py                       https://youtu.be/Oq4KyNDkMYA
+   │   │   │   ├── HydroForceEngine
+   │   │   │   │   ├── oneWayCoupling
+OK │OK │OK │YES│   │   ├── buoyantParticles.py            https://youtu.be/AjFtdbaorE4
+OK │OK │OK │YES│   │   ├── fluidizedBed.py                https://youtu.be/_sFdHmc2kf8
+OK │OK │OK │YES│   │   ├── sedimentTransportExample.py    https://youtu.be/W6h-k7gGwTo
+OK │OK │OK │no │   │   └── postProcessing_sedim.py
+   │   │   │   │   ├── twoWayCoupling
+OK │OK │ok │YES│   │   ├── laminarShearFlow.py            https://youtu.be/E2IOd9k47KM
+x  │x  │OK │x  │   │   ├── postProcessing_sedim.py        line:49 ValueError: operands could not be broadcast together with shapes (900,) (901,) (900,)
+OK │OK │OK │no │   │   └── sedimentTransportExample_1DRANSCoupling.py
+   │   │   │   │   └── validations
+   │   │   │   │       ├── DEMCoupling
+   │   │   │   │       │   ├── Maurinetal2015
+OK │OK │OK │YES│       │   │   ├── validMaurin2015.py             https://youtu.be/__8jcD7It0w
+OK │OK?│ok │YES│       │   │   └── postProcessValidMaurin2015.py  https://youtu.be/H_6CcrA3dSE   Note: Plot of time vs. Qs is empty. Got: RuntimeWarning: invalid value encountered in divide
+   │   │   │   │       │   └── Maurinetal2016_r2d6s2
+   │   │   │   │       │       ├── DATAr2d6s2_Maurinetal2016.py
+OK │OK │OK │no │       │       ├── sedimentTransportExample_1DRANSCoupling.py
+OK?│OK?│OK │no │       │       └── postProcessing_sedim.py        Note: Plot of time vs. Qs is empty.
+   │   │   │   │       └── fluidValidation
+OK │OK │OK │pic│           ├── logProfile.py              FIXME: this should go to yade --test or --check, because that's a test actually.
+OK │OK │OK │pic│           └── poiseuille.py              FIXME: this should go to yade --test or --check, because that's a test actually.
+   │   │   │   ├── LudingPM
+x  │x  │x  │x  │   ├── LudingPM_1.py                      NewtonIntegrator: NaN force acting on #0.
+x  │x  │x  │x  │   └── LudingPM_2.py                      NewtonIntegrator: NaN force acting on #0.
+   │   │   │   ├── PeriodicBoundaries
+OK │ok?│OK │YES│   ├── cellFlipping.py                    https://youtu.be/MOwatO13pgI
+OK │OK │ok │YES│   ├── peri3dController_example1.py       https://youtu.be/PWbri2_SR4w
+OK │OK?│OK │YES│   ├── peri3dController_shear.py          https://youtu.be/jMqqEF5LWTY
+ERR│OK │OK │YES│   ├── peri3dController_triaxialCompression.py  https://youtu.be/Jlq0V2jaQx0
+ERR│OK │ok │YES│   ├── periodic-compress.py               https://youtu.be/1_6Umjgia2k
+OK?│OK?│OK │xx │   ├── periodic-grow.py                   note: no visuals, I guess I would have to wait longer to see anything
+OK │OK │x  │YES│   ├── periodic-shear.py                  https://youtu.be/XY_CwJcrsTE
+OK │OK │ok │YES│   ├── periodic-simple-shear.py           https://youtu.be/JXK9FwuU0WM
+OK │OK │ok │YES│   ├── periodic-simple.py                 https://youtu.be/q1yYLxZZU-Y
+OK │OK │OK │YES│   ├── periodic-triax-settingHsize.py     https://youtu.be/8b_lJm4GhYs
+OK │OK │ok │YES│   ├── periodic-triax.py                  https://youtu.be/Hp1W8WhmQZU
+OK │OK │OK │YES│   └── periodicSandPile.py                https://youtu.be/_SeA5KDzxpg
+   │   │   │   ├── PotentialBlocks
+OK │OK │ok │YES│   ├── WedgeYADE.py                       https://youtu.be/GYrFkhFV-0E
+OK │OK │ok │YES│   └── cubePBscaled.py                    https://youtu.be/Slnj-KeG-0w
+   │   │   │   ├── PotentialParticles
+OK │OK │x  │YES│   └── cubePPscaled.py                    https://youtu.be/gOgjwMavjuk     Note: clicking GUI→Display→intrAllWire will cause crash see: https://gitlab.com/yade-dev/trunk/issues/48 https://gitlab.com/yade-dev/trunk/merge_requests/36 , old site: https://bugs.launchpad.net/yade/+bug/1813222
+   │   │   │   ├── WireMatPM
+ok │ok │x  │YES│   ├── wirecontacttest.py                 https://youtu.be/Kc0R6ZaSIa0
+ok │ok │ok │YES│   ├── wirepackings.py                    https://youtu.be/VaW6gDdyiIc
+ok │ok │ok │YES│   └── wiretensiltest.py                  https://youtu.be/mC2Rj-MK2TE
+   │   │   │   ├── adaptiveintegrator
+OK │OK │x  │YES│   ├── simple-scene-plot-NewtonIntegrator.py           https://youtu.be/gRkKQKhwl5w
+OK │OK │x  │YES│   └── simple-scene-plot-RungeKuttaCashKarp54.py       https://youtu.be/57LmSgbSFZI
+   │   │   │   ├── agglomerate
+ok │ok │OK │ski│   ├── makeCloud.py
+ok │ok │OK │ski│   ├── divide.py
+ok │ok │OK │YES│   ├── compress.py                        https://youtu.be/u_Wua_JnYE4
+OK │OK │OK │YES│   └── simulation.py                      https://youtu.be/QOhpCAJ5ypw
+   │   │   │   ├── baraban
+OK │OK │x  │YES│   ├── BicyclePedalEngine.py              https://youtu.be/tF9Qe9ayklo
+OK │OK │x  │YES│   ├── baraban.py                         https://youtu.be/OCcjDf1rluw
+ok │ok │x  │YES│   └── rotating-cylinder.py               https://youtu.be/Hh6nGzIU1vU                                  a little too slow
+   │   │   │   ├── bulldozer
+OK │OK │ok │YES│   ├── bulldozer.py                       https://youtu.be/6cTyE-KfgcQ
+OK │OK │ok │no │   └── bulldozerVTK.py
+   │   │   │   ├── capillary
+OK │OK │ok?│YES│   ├── capillar.py                        https://youtu.be/gtpNKGJZpyc
+   │   │   │   │   └── liquidmigration
+x  │x  │ok?│x  │       └── showcase.py                    NameError: name 'LiqControl' is not defined ; I guess need to recompile with LIQMIGRATION or something like that
+   │   │   │   ├── capillaryLaplaceYoung
+OK?│OK?│OK │YES│   ├── CapillaryPhys-example.py           https://youtu.be/H0bPKX-jwu8
+OK │OK │ok?│YES│   └── capillaryBridge.py                 https://youtu.be/ds6zXTxaIY0
+   │   │   │   ├── chained-cylinders
+OK │OK?│x  │YES│   ├── CohesiveCylinderSphere.py          https://youtu.be/F2eStgTSgp0         UserWarning: chainedCylinder is deprecated and will be removed in the future, use GridConnection instead.
+OK │OK?│ok?│YES│   ├── chained-cylinder-roots.py          https://youtu.be/wwkUIpVBL8k         UserWarning: chainedCylinder is deprecated and will be removed in the future, use GridConnection instead.
+OK │OK?│ok?│YES│   └── chained-cylinder-spring.py         https://youtu.be/wYp0XA_Q3ds         UserWarning: chainedCylinder is deprecated and will be removed in the future, use GridConnection instead.
+   │   │   │   ├── clumps
+ok?│ok?│ok │YES│   ├── addToClump-example.py              https://youtu.be/uP19j2yZltg                           SIGSEGV/SIGABRT handler called; gdb
+OK │OK │OK │YES│   ├── apply-buoyancy-clumps.py           https://youtu.be/fwsx_c1ibkM
+OK │OK │x  │YES│   ├── clump-hopper-test.py               https://youtu.be/ESzQ3t7RHeM         spams with messages: DomainLimiter::erase 2342
+OK │OK │x  │YES│   ├── clump-hopper-viscoelastic.py       https://youtu.be/cX7Ewoz9wy8
+OK │OK │x  │YES│   ├── clump-inbox-viscoelastic.py        https://youtu.be/rpOYcwoDihE
+OK │OK │x  │YES│   ├── clump-viscoelastic.py              https://youtu.be/VSovZDU8Kb8
+OK │OK │ok │YES│   ├── releaseFromClump-example.py        https://youtu.be/inER1NuyM-0
+OK │OK │ok │YES│   ├── replaceByClumps-example.py         https://youtu.be/zjeN-OUj18A
+ok?│x  │ok │x  │   ├── save-load-clumps.py                Assertion `member->isClumpMember()' failed. SIGSEGV/SIGABRT handler called; gdb
+OK │OK │ok │YES│   └── triax-basic-with-clumps.py         https://youtu.be/kqisX2LfwIg
+   │   │   │   ├── concrete
+OK │OK │ok │YES│   ├── brazilian.py                       https://youtu.be/KCq336lbw7w
+ERR│OK │ok │YES│   ├── periodic.py                        https://youtu.be/DOptBIIp73U
+OK │OK │ok │YES│   ├── triax.py                           https://youtu.be/BEB88z1EztA
+OK │OK │OK │YES│   ├── uniax.py                           https://youtu.be/Z1VQ14m0riM
+OK │OK │ok?│YES│   ├── uniax-post.py                      https://youtu.be/iXYD9kMB9kA
+OK │OK │x  │YES│   └── interaction-histogram.py           https://youtu.be/59f8gSLu6DA
+   │   │   │   ├── conveyor
+OK │OK │OK │YES│   └── conveyor.py                        https://youtu.be/bLULZ2a_thk
+   │   │   │   ├── cylinders
+OK │OK │OK │YES│   ├── bendingbeams.py                    https://youtu.be/DO_ab64sUJc
+OK │OK │OK │YES│   ├── cylinder-cylinder.py               https://youtu.be/IEzbwudIwGA
+OK │OK │OK │YES│   ├── cylinderconnection-roots.py        https://youtu.be/h-6z79VXWA8
+OK │OK │OK │YES│   └── mikado.py                          https://youtu.be/j2aNyUSaWps
+   │   │   │   ├── deformableelem
+x  │x  │x  │x  │   ├── Minimal.py                         the graphs are empty
+OK │ok │x  │YES│   ├── MinimalTensileTest.py              https://youtu.be/sa0yVUKytN0
+OK │ok?│x  │YES│   ├── testDeformableBodies.py            https://youtu.be/L0q-1QMmw8Q                     It works?? But prints this ERROR: DeformableCohesiveElement.hpp:49 operator<: Incomplete 'if' sequence
+OK │ok?│ok │YES│   └── testDeformableBodies_pressure.py   https://youtu.be/QPAtlnptjvk                     It works?? But prints this ERROR: DeformableCohesiveElement.hpp:49 operator<: Incomplete 'if' sequence
+   │   │   │   ├── grids
+OK │OK │OK │YES│   ├── CohesiveGridConnectionSphere.py    https://youtu.be/H8VCdsW6wVA
+OK │OK │x  │YES│   ├── GridConnection_Spring.py           https://youtu.be/NQL5y7bz9XU
+OK │OK │x  │YES│   ├── Simple_GridConnection_Falling.py   https://youtu.be/ede8_SQkkeM
+OK │OK │x  │YES│   └── Simple_Grid_Falling.py             https://youtu.be/g8HVsbJB4fU
+   │   │   │   ├── gts-horse
+OK │OK │ok │YES│   ├── gts-horse.py                       https://youtu.be/xteVeQlMrYM
+OK │OK │OK │YES│   ├── gts-operators.py                   https://youtu.be/eZ9jBEiKUnk
+ok │ok │ok │YES│   ├── gts-random-pack-obb.py             https://youtu.be/L04jwnz5Ujg              note: super slow
+OK │OK │OK │YES│   └── gts-random-pack.py                 https://youtu.be/1dMVlf2u0zM
+   │   │   │   ├── hourglass
+OK │OK │OK │YES│   └── hourglass.py                       https://youtu.be/wS_x4UPROOE
+   │   │   │   ├── jointedCohesiveFrictionalPM
+OK │OK │ok │no │   ├── gravityBis.py
+x  │x  │x  │x  │   ├── gravityLoading.py                  No such file or directory: 'parallellepiped_10_persistentPlane30Deg.spheres'
+x  │x  │x  │x  │   ├── identificationSpheresOnJoint.py    No such file or directory: 'parallellepiped_10.spheres'
+x  │x  │x  │x  │   ├── packInGtsSurface.py                spams messages: UnbalancedForce=-nan, rel stress nan, does not finish running after 20 hours.
+OK │OK │ok │no │   └── testingJoint.py
+   │   │   │   ├── not-working
+x  │x  │x  │x  │   ├── Se3Interpolator.py                 NameError: name 'Se3Interpolator' is not defined
+x  │x  │x  │x  │   ├── facet-topo.py                      Recompile with FACET_TOPO
+?? │?? │x  │x  │   ├── insertion-sort-collider.py         something works, then SIGSEGV/SIGABRT handler called; gdb; in PersistentTriangulationCollider.cpp:110 the interaction==nullptr
+x  │x  │x  │x  │   └── triax-identical-results.py         NameError: name 'spheresToFile' is not defined
+   │   │   │   ├── oar
+x  │x  │x  │x  │   └── sim.py                             KeyError: 'Invalid key: description.'
+   │   │   │   ├── openfoam
+   │   │   │   │   ├── example_icoFoamYade
+?  │OK │OK │yes│   │   └── scriptYade.py                  https://youtu.be/J_V1ffx71To
+   │   │   │   │   └── example_pimpleFoamYade
+?  │OK │OK │no │       └── scriptYade.py
+   │   │   │   ├── packs
+OK │OK │OK │YES│   └── packs.py                           https://youtu.be/luGIch9gSdg
+   │   │   │   ├── pfacet
+OK │OK │x  │YES│   ├── gts-pfacet.py                      https://youtu.be/AA2rCfdBX1w
+OK │OK │x  │YES│   ├── mesh-pfacet.py                     https://youtu.be/HZ3aAOaebbo
+OK │OK │ok │YES│   ├── pFacets_grids_spheres_interacting.py   https://youtu.be/3e09Zi_LPU0
+OK │OK │x  │YES│   └── pfacetcreators.py                  https://youtu.be/5PMYeadRRvA
+   │   │   │   ├── polyhedra
+OK │OK │x  │YES│   ├── ball.py                            https://youtu.be/pH6kbVcTRg4
+OK │OK │x  │no │   ├── clump.py
+OK │OK │x  │no │   ├── free-fall.py
+OK │OK │x  │YES│   ├── horse.py                           https://youtu.be/I9bpX85B8f8
+OK │OK │ok │YES│   ├── irregular.py                       https://youtu.be/9XbkYXukdjI
+OK │OK │x  │YES│   ├── sphere-interaction.py              https://youtu.be/2ZlWJBQ4ELY
+OK │OK │ok │YES│   ├── splitter.py                        https://youtu.be/IjXvPLU92xQ
+   │   │   │   │   ├── tests
+OK │ok?│x  │YES│   │   ├── interactinDetectionFactor.py   https://youtu.be/mPj7YfFObdg
+OK │OK │x  │YES│   │   └── scGeom.py                      https://youtu.be/xdpFnwy_mB8
+OK │OK │x  │YES│   ├── textExport.py                      https://youtu.be/Js52jLduYYM
+ok?│OK │x  │no │   └── wall.py
+   │   │   │   ├── polyhedraBreak
+ERR│OK │ok?│YES│   └── uniaxial_compression.py            https://youtu.be/r77l-A8O8ug     Error in python3: a bytes-like object is required, not 'str'
+   │   │   │   ├── ring2d
+OK │OK │x  │YES│   ├── ringCundallDamping.py              https://youtu.be/jm_snDXShaE
+OK │OK │x  │YES│   └── ringSimpleViscoelastic.py          https://youtu.be/1-StKzb7XV4
+   │   │   │   ├── rod-penetration
+OK │ok │x  │YES│   └── model.py                           https://youtu.be/b_yLp0onOzg
+   │   │   │   ├── simple-scene
+OK │OK │ok │YES│   ├── 2SpheresNormVisc.py                https://youtu.be/kiWMTyNGMv4
+OK │OK │ok │YES│   ├── save-then-reload.py                https://youtu.be/-_xUAgGMz2E
+OK │OK │ok │YES│   ├── simple-scene-default-engines.py    https://youtu.be/i8Vl3tx1-JM
+OK │OK │x  │YES│   ├── simple-scene-energy-tracking.py    https://youtu.be/D3XrbW3lvsU
+OK │OK │x  │YES│   ├── simple-scene-plot.py               https://youtu.be/3bUCL4VmvGM
+OK │OK │OK │YES│   └── simple-scene.py                    https://youtu.be/a6j6v6zByFk
+   │   │   │   ├── sph
+x  │x  │x  │x  │   ├── dam_break.py                       AttributeError: No such attribute: KernFunctionPressure. , I guess must Recompile with SPH
+x  │x  │x  │x  │   ├── sph_box.py                         AttributeError: No such attribute: h.
+x  │x  │x  │x  │   ├── testKernelFunc.py                  AttributeError: No such attribute: KernFunctionPressure.
+x  │x  │x  │x  │   ├── toystar.py                         AttributeError: No such attribute: h.
+x  │x  │x  │x  │   └── watercolumn.py                     AttributeError: No such attribute: h.
+   │   │   │   ├── stl-gts
+OK │OK │OK │YES│   └── gts-stl.py                         https://youtu.be/MvxHr7mCR0A                  NOTE: apt install gmsh libgts-bin
+   │   │   │   ├── tesselationwrapper
+OK │OK │ok │YES│   └── tesselationWrapper.py              https://youtu.be/2o3Y4znBmh8
+   │   │   │   ├── test
+OK │OK │ok │no │   ├── Damping_HM.py
+   │   │   │   │   ├── WireMatPM
+OK │OK │ok │YES│   │   ├── net-2part-displ-unloading.py   https://youtu.be/588FJ80bf4I
+ok │ok │ok │YES│   │   ├── net-2part-displ.py             https://youtu.be/dcU3xQghpEc
+ok │x  │ok │x  │   │   └── net-2part-strain.py            UniaxialStrainer::action(): Assertion `posIds.size()==posCoords.size()……… SIGSEGV/SIGABRT handler called; UniaxialStrainer.cpp:86: virtual void UniaxialStrainer::action(): Assertion posIds.size()==posCoords.size() failed.
+   │   │   │   │   ├── batch
+x  │x  │x  │x  │   │   └── sim.py                         KeyError: 'Invalid key: description.'
+OK │OK │OK │YES│   ├── beam-l6geom.py                     https://youtu.be/CFWi3YGXSKQ
+ok │ok │x  │no │   ├── callback.py
+OK │OK │x  │YES│   ├── clump-facet.py                     https://youtu.be/kGRgeom2isI
+OK │OK │x  │no │   ├── clump.py
+OK │OK │ok?│YES│   ├── clumpPack.py                       https://youtu.be/qq17u0gXAfU
+OK │OK │ok │YES│   ├── collider-stride-triax.py           https://youtu.be/jHXXuu7WeBk
+OK │OK │ok │YES│   ├── collider-stride.py                 https://youtu.be/0UIC-HhGDBY
+ok?│ok?│x  │no │   ├── collider-sweep-simple.py
+OK │OK │ok?│YES│   ├── combined-kinematic-engine.py       https://youtu.be/6lN9N1YAmvM
+OK │OK │x  │YES│   ├── energy.py                          https://youtu.be/8v6ln8by5fo
+x  │x  │x  │x  │   ├── exact-rot-facet.py                 [with T = IGeomFunctor; typename boost::detail::sp_member_access<T>::type = IGeomFunctor*]: Assertion `px != 0' failed. SIGSEGV/SIGABRT handler called; gdb; the I->functorCache.geom==nullptr in Dispatching.cpp:129
+x  │x  │x  │x  │   ├── exact-rot.py                       [with T = IGeomFunctor; typename boost::detail::sp_member_access<T>::type = IGeomFunctor*]: Assertion `px != 0' failed. SIGSEGV/SIGABRT handler called; gdb; the I->functorCache.geom==nullptr in Dispatching.cpp:129
+ok │ok │x  │YES│   ├── facet-box.py                       https://youtu.be/9h-5MLa5s0o
+OK │OK │OK │YES│   ├── facet-sphere-ViscElBasic-peri.py   https://youtu.be/NKzzupEVO8A
+OK │OK │OK │YES│   ├── facet-sphere-ViscElBasic.py        https://youtu.be/cggR3UG7a6o
+OK │OK │ok │YES│   ├── facet-sphere.py                    https://youtu.be/7aJ2jHK2zv8
+OK │OK │x  │no │   ├── flat-collider.py                   (a bit slow, but ok)
+ok?│ok?│x  │no │   ├── force-move.py
+OK │OK │OK │no │   ├── force-network-video.py
+x  │x  │OK │x  │   ├── genCylLSM.py                       NOTE: apt install  python-demgengeo   ; InsertGenerator3D::seedParticles bbx: SIGSEGV/SIGABRT handler called; gdb; gdb; segfault appears inside gengeom function fit_3d_sphere_fn::operator() and InsertGenerator3D::fillIn(…), I guess that the arguments for calling it were prepared incorrectly.
+ok │ok │ok │YES│   ├── helix.py                           https://youtu.be/EvpwMBdyG4s
+ok?│ok?│ok │YES│   ├── interpolating-force.py             https://youtu.be/3RNc1J9YCds
+OK │OK │ok │YES│   ├── kinematic.py                       https://youtu.be/J10jxnWuhFc
+OK │OK │ok │YES│   ├── mindlin.py                         https://youtu.be/kqr39aXEMCk
+   │   │   │   │   ├── multi
+?  │ok?│ok?│YES│   │   └── multi.py                       https://youtu.be/-DQrAVyXEzw                refers to https://yade-dem.org/wiki/ScriptParametricStudy
+OK │OK │ok │YES│   ├── pack-cloud.py                      https://youtu.be/bcPS894Qp_g
+ok?│ok?│x  │YES│   ├── pack-inConvexPolyhedron.py         https://youtu.be/fBJT5iFQ4ak
+x  │x  │x  │x  │   ├── pack-predicates.py                 nothing happens, scene is empty
+   │   │   │   │   ├── paraview-spheres-solid-section
+OK │OK │ok │no │   │   ├── export_text.py
+OK │OK │ok │YES│   │   └── pv_section.py                  https://youtu.be/bFiUfoEXFMQ         NOTE: apt install paraview-python
+   │   │   │   │   ├── performance
+ok?│ok?│x  │no │   │   └── checkPerf.py                   note: no visuals
+OK │OK │ok?│YES│   ├── periodic-geom-compare.py           https://youtu.be/SiobftG7Lqw
+OK │OK │ok │YES│   ├── psd.py                             https://youtu.be/HVs7qGg4AE0         testing+plotting size distribution generated by makeCloud (scene is left  empty).
+x  │x  │x  │x  │   ├── qt4-attributes.py                  Error: already imported an Incompatible QT Binding: pyqt5
+x  │x  │x  │x  │   ├── qt4-pyqglviewer.py                 ImportError: No module named PyQGLViewer
+x  │x  │x  │x  │   ├── remove-body.py                     AttributeError: No such attribute: nBins
+x  │x  │ok?│x  │   ├── shear.py                           sp_member_access<T>::type = IGeomFunctor*: Assertion `px != 0' failed. SIGSEGV/SIGABRT handler called; gdb; the I->functorCache.geom==nullptr in Dispatching.cpp:129
+OK │OK │ok │YES│   ├── sphere-sphere-ViscElBasic-peri.py  https://youtu.be/ar4JDS6vjs0
+OK │OK │x  │YES│   ├── subdomain-balancer.py              https://youtu.be/i4_LOzGk3m8
+OK │OK │x  │YES│   ├── test-sphere-facet-corner.py        https://youtu.be/NaELYGF9tKg
+OK?│OK?│OK │YES│   ├── test-sphere-facet.py               https://youtu.be/J7i86WHK3QA
+ok?│x  │x  │x  │   ├── test_Ip2_FrictMat_CpmMat_FrictPhys.py   After collision there is error: InteractionLoop::action(): Assertion `!swap' failed. SIGSEGV/SIGABRT handler called; gdb, see: https://gitlab.com/yade-dev/trunk/issues/10 , previous bug address with more discussion: https://bugs.launchpad.net/yade/+bug/1475844 (NOTE not reproduced in 2018.02b, needs further investigation, NOTE2: happens also in 2018.02b on a different computer so it is random)
+OK │OK │ok │YES│   ├── triax-basic.py                     https://youtu.be/B2DIXJJvpwM
+OK │OK │ok │no │   ├── triax-basic-without-plots.py       https://youtu.be/AALiZ7G7yNM
+OK │OK │ok │no │   ├── triax-cohesive.py
+   │   │   │   │   ├── unv-read
+OK │OK │ok │YES│   │   ├── unvRead.py                     https://youtu.be/IkDE36LAwr8
+OK │OK │ok │no │   │   └── unvReadVTKExport.py
+   │   │   │   │   ├── vtk-exporter
+ok?│ok │x  │no │   │   └── vtkExporter.py
+OK │OK │ok │no │   ├── vtkPeriodicCell.py
+OK │OK │OK │no │   ├── wall.py
+ok │ok │ok │no │   └── wm3-wrap.py
+   │   │   │   ├── tetra
+OK │OK │OK │YES│   ├── oneTetra.py                        https://youtu.be/bv8PxbiG500
+OK │OK │OK │YES│   ├── oneTetraPoly.py                    https://youtu.be/vzOJte9HzgI
+OK │OK │OK │YES│   ├── twoTetras.py                       https://youtu.be/U9edvfJWspk
+OK │OK │OK │YES│   └── twoTetrasPoly.py                   https://youtu.be/nAIBxWQ32-o
+   │   │   │   └── triax-tutorial
+OK │OK │OK │no     ├── script-session1.py
+OK │OK │OK │no     └── script-session2.py
+   │   │   │   │
+   │   │   │   ../doc/sphinx
+   │   │   │   │
+   │   │   │   └── tutorial
+OK │OK │OK │OK     ├── 01-bouncing-sphere.py
+OK │OK │OK │OK     ├── 02-gravity-deposition.py
+OK │OK │OK │OK     ├── 03-oedometric-test.py
+ok?│ok?│OK │OK     ├── 04-periodic-simple-shear.py        see:  https://bugs.launchpad.net/yade/+bug/1634434 → https://gitlab.com/yade-dev/trunk/issues/30   ZeroDivisionError: float division by zero
+OK │OK │OK │OK     ├── 05-3d-postprocessing.py            https://youtu.be/XpCWWPptQN4
+OK │OK │OK │OK     ├── 06-periodic-triaxial-test.py
+ok?│ok?│ok?│x      ├── make-simulation-video.py
+ok │ok │x  │x      └── peri-triax.py                      looks like duplicate of 06-periodic-triaxial-test.py
+

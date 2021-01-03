@@ -1,0 +1,9 @@
+!OMP_NUM_THREADS !WALLTIME important! unimportant this! more
+# comment
+	# comment and empty line
+
+2 01:00:00 51 'hummm' 3.1415  'a'
+1 = 51 'paaah' = 'b'
+= = 52 = 'fff' = 'c'
+= 00:30:00 =  'not' = 'd' 
+3 = 52 'yes' 2.71828 'e'
